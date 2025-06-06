@@ -251,6 +251,15 @@ export class Player {
         // return this.history[this.historyIndex];
     }
 
+
+    removeFromGame(): void {
+        const idx = players.findIndex(p => p === this);
+        if (idx !== -1) players.splice(idx, 1);
+
+        this.socket?.end();
+        this.socket?.destroy();
+    }
+
     // rememberEnemyBaseForTeam(base: Base) {
     //     if (base.side === this.ship.side) return;
     //     if (this.ship.side !== "FEDERATION" && this.ship.side !== "EMPIRE") return;

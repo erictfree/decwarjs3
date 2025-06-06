@@ -32,7 +32,7 @@ import { tractorCommand } from './tractor.js';
 // import { damagesCommand } from './damage.js';
 // import { typeCommand } from './type.js';
 import { gripeCommand } from './gripe.js';
-// import { quitCommand } from './quit.js';
+import { quitCommand } from './quit.js';
 // import { restartCommand } from './restart.js';
 // import { clearCommand } from './util/clear.js';
 import { sendMessageToClient } from './communication.js';
@@ -82,7 +82,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["PL", planetsCommand],
     // ["PO", pointsCommand],
     // ["PR", promoteCommand],
-    // ["Q", quitCommand],
+    ["Q", quitCommand],
     ["RA", radioCommand],
     // ["RE", repairCommand],
     // ["RS", restartCommand],
