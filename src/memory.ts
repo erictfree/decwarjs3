@@ -3,8 +3,8 @@ import { Planet } from "./planet";
 
 
 export const teamMemory = {
-    federation: { planets: new Map<string, Planet>() },
-    empire: { planets: new Map<string, Planet>() }
+    federation: new Map<string, Planet>(),
+    empire: new Map<string, Planet>()
 };
 
 // export function addBaseToMemory(player: Player, base: Base): void {
@@ -16,7 +16,7 @@ export function addPlanetToMemory(player: Player, planet: Planet): void {
     if (!player.ship) return;
 
     const memory = player.ship.side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
-    memory.planets.set(`${planet.position.v},${planet.position.h}`, planet);
+    memory.set(`${planet.position.v},${planet.position.h}`, planet);
 }
 
 // export function removeBaseFromMemory(base: Base): void {
@@ -25,8 +25,8 @@ export function addPlanetToMemory(player: Player, planet: Planet): void {
 // }
 
 export function removePlanetFromMemory(planet: Planet): void {
-    teamMemory.federation.planets.delete(`${planet.position.v},${planet.position.h}`);
-    teamMemory.empire.planets.delete(`${planet.position.v},${planet.position.h}`);
+    teamMemory.federation.delete(`${planet.position.v},${planet.position.h}`);
+    teamMemory.empire.delete(`${planet.position.v},${planet.position.h}`);
 }
 
 // export function isBaseInMemory(player: Player, base: Base): boolean {
@@ -37,5 +37,5 @@ export function removePlanetFromMemory(planet: Planet): void {
 export function isPlanetInMemory(player: Player, planet: Planet): boolean {
     if (!player.ship) return false;
     const memory = player.ship.side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
-    return memory.planets.has(`${planet.position.v},${planet.position.h}`);
+    return memory.has(`${planet.position.v},${planet.position.h}`);
 }

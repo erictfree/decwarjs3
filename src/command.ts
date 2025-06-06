@@ -3,35 +3,35 @@ import { Player } from './player.js';
 // import { usersCommand } from './users.js';
 // import { sendMessageToClient } from './communication.js';
 // import { moveCommand } from './move.js';
-// import { helpCommand } from './help.js';
+import { helpCommand } from './help.js';
 import { shieldCommand } from './shield.js';
 // import { radioCommand } from './radio.js';
-// import { planetsCommand } from './planets.js';
+import { planetsCommand } from './planets.js';
 // import { captureCommand } from './capture.js';
 // import { buildCommand } from './build.js';
 // import { dockCommand } from './dock.js';
 import { shortRangeScanCommand } from './srs.js';
 // import { statusCommand } from './status.js';
 // import { pointsCommand } from './points.js';
-// import { summaryCommand } from './summary.js';
-// import { listCommand } from './list.js';
-// import { basesCommand } from './bases.js';
-// import { targetsCommand } from './targets.js';
+import { summaryCommand } from './summary.js';
+import { listCommand } from './list.js';
+import { basesCommand } from './bases.js';
+import { targetsCommand } from './targets.js';
 // import { tellCommand } from './tell.js';
 // import { setCommand } from './set.js';
 // import { phaserCommand } from './phaser.js';
-// import { newsCommand } from './news.js';
+import { newsCommand } from './news.js';
 // import { torpedoCommand } from './torpedo.js';
 // import { repairCommand } from './repair.js';
 import { scanCommand } from './scan.js';
 import { timeCommand } from './time.js';
-// import { tractorCommand } from './tractor.js';
+import { tractorCommand } from './tractor.js';
 // import { impulseCommand } from './move.js';
 // import { xgridCommand } from './grid.js';
 // import { energyCommand } from './energy.js';
 // import { damagesCommand } from './damage.js';
 // import { typeCommand } from './type.js';
-// import { gripeCommand } from './gripe.js';
+import { gripeCommand } from './gripe.js';
 // import { quitCommand } from './quit.js';
 // import { restartCommand } from './restart.js';
 // import { clearCommand } from './util/clear.js';
@@ -63,7 +63,7 @@ export class Command {
 // --- Command Registry ---
 
 const decwarCommands = new Map<string, CommandHandler>([
-    // ["BA", basesCommand],
+    ["BA", basesCommand],
     // ["BU", buildCommand],
     // ["CA", captureCommand],
     // ["CL", clearCommand],
@@ -71,15 +71,15 @@ const decwarCommands = new Map<string, CommandHandler>([
     // ["DO", dockCommand],
     // //["UD", defaultHandler],
     // ["EN", energyCommand],
-    // ["GR", gripeCommand],
-    // ["H", helpCommand],
-    // ["?", helpCommand],
+    ["GR", gripeCommand],
+    ["H", helpCommand],
+    ["?", helpCommand],
     // ["IM", impulseCommand],
-    // ["LI", listCommand],
+    ["LI", listCommand],
     // ["M", moveCommand],
-    // ["NE", newsCommand],
+    ["NE", newsCommand],
     // ["PH", phaserCommand],
-    // ["PL", planetsCommand],
+    ["PL", planetsCommand],
     // ["PO", pointsCommand],
     // ["PR", promoteCommand],
     // ["Q", quitCommand],
@@ -91,12 +91,12 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["SH", shieldCommand],
     ["SR", shortRangeScanCommand],
     // ["ST", statusCommand],
-    // ["SU", summaryCommand],
-    // ["TA", targetsCommand],
+    ["SU", summaryCommand],
+    ["TA", targetsCommand],
     // ["TE", tellCommand],
     ["TI", timeCommand],
     // ["TO", torpedoCommand],
-    // ["TR", tractorCommand],
+    ["TR", tractorCommand],
     // ["TY", typeCommand],
     // ["U", usersCommand],
     // ["XGRID", xgridCommand]

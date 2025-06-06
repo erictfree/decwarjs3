@@ -7,7 +7,12 @@ import { Ship } from "./ship.js";
 export function shieldCommand(player: Player, command: Command): void {
     const action = command.args[0]?.toUpperCase();
 
-    //if (!ensureDeviceOperational(player, "shield")) return;  TODO PUT BACK
+    if (!player.ship) {
+        sendMessageToClient(player, "You must be in a ship to use SHIELD.");
+        return;
+    }
+
+    if (!player.ship.isDeviceOperational("shield")) return;
 
     if (!action) {
         sendMessageToClient(player, "Usage: SHIELD [UP|DOWN|TRANSFER amount]");

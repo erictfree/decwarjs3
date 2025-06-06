@@ -5,7 +5,7 @@ import { getRandom } from './util/random.js';
 
 export class Planet {
     public position: Position;
-    public side: Side | null;
+    public side: Side;
     public builds: number;
     public isBase: boolean;
     public strength: number;   // base
@@ -14,7 +14,7 @@ export class Planet {
 
     constructor(v: number, h: number) {
         this.position = { v: v, h: h };
-        this.side = null;
+        this.side = "NEUTRAL";
         this.builds = 0;
         this.isBase = false;
         this.strength = 0;
@@ -30,11 +30,11 @@ export class Planet {
         baseArray.push(this);
     }
 
-    removeBase(): void {
+    removeBase(): void {   // total removal or just demoting?  TODO
         if (this.isBase) {
             const baseArray = this.side === "FEDERATION" ? bases.federation : bases.empire;
             this.isBase = false;
-            this.side = null;
+            this.side = "NEUTRAL";
             this.strength = 0;
             baseArray.splice(baseArray.indexOf(this), 1);
         }

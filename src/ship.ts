@@ -1,7 +1,8 @@
 import { addPendingMessage, sendMessageToClient, sendOutputMessage } from './communication.js';
-import { Position, findEmptyLocation } from './coords.js';
-import { SHIPNAMES, Side, ShipCondition, MAX_TORPEDOES, MAX_SHIP_ENERGY, MAX_SHIELD_ENERGY } from './settings.js';
+import { Position, findEmptyLocation, chebyshev } from './coords.js';
+import { SHIPNAMES, Side, Condition, MAX_TORPEDOES, MAX_SHIP_ENERGY, MAX_SHIELD_ENERGY } from './settings.js';
 import { Player } from './player.js';
+import { players } from './game.js';
 
 
 type Cooldowns = {
@@ -52,7 +53,7 @@ export class Ship {
         lifeSupport: number;
     }
     lifeSupportFailureTimer: number | null = null;
-    public condition: ShipCondition;
+    public condition: Condition;
     public damage: number;
     public cooldowns: Cooldowns;
 
@@ -257,18 +258,73 @@ export class Ship {
         return this.shieldsUp ? Math.round(percent) : -Math.round(percent);
     }
 
-    // static createShip(player: Player): Ship {
-    //     const ship = new Ship(player);
-    //     ship.side = "NEUTRAL";
-    //     ship.name = "UNKNOWN";
-    //     ship.position = { x: 0, y: 0 };
-    //     return ship;
-    // }
+    isDeviceOperational(device: keyof typeof this.devices): boolean {
+        function isDeviceInoperative(ship: Ship, device: keyof typeof ship.devices): boolean {
+            return ship.devices[device] >= 300;
+        }
+
+        function deviceMayFail(ship: Ship, device: keyof typeof ship.devices): boolean {
+            const dmg = ship.devices[device];
+            return dmg >= 300 || (dmg >= 100 && Math.random() < 0.25);
+        }
+
+        function deviceMalfunctionMessage(device: string): string {
+            const messages: Record<string, string> = {
+                warp: "ERROR: Warp drive malfunction.",
+                impulse: "ERROR: Impulse engines not responding.",
+                torpedo: "ERROR: Torpedo system inoperative.",
+                phaser: "ERROR: Phaser banks offline.",
+                shield: "ERROR: Shield generator offline.",
+                computer: "ERROR: Computer too damaged to compute coordinates.",
+                lifeSupport: "WARNING: Life support system failing.",
+                radio: "ERROR: Radio system inoperative.",
+                tractor: "ERROR: Tractor beam malfunction.",
+            };
+            return messages[device] ?? `ERROR: ${device} system failure.`;
+        }
+
+        if (isDeviceInoperative(this, device)) {
+            sendMessageToClient(this.player, deviceMalfunctionMessage(device));
+            return false;
+        }
+        if (deviceMayFail(this, device)) {
+            sendMessageToClient(this.player, deviceMalfunctionMessage(device));
+            return false;
+        }
+        return true;
+    }
+
+
+    computeCondition(): Condition {
+        // 1. RED if any enemy ship within 10-man distance
+        for (const other of players) {
+            if (other === this.player || !other.ship) continue;
+            if (other.ship.side === this.side) continue;
+
+            // if (chebyshev(this.position, other.ship.position) <= 10) {  // TODO PUT BACK
+            //     return "RED";
+            // }
+        }
+
+        // 2. YELLOW if moderately low energy or significant damage
+        if (this.damage >= 1000 || this.energy < 1000) {
+            return "YELLOW";
+        }
+
+        // 3. GREEN otherwise
+        return "GREEN";
+    }
+
     static resolveShipName(abbreviation: string): string | null {
         const upper = abbreviation.toUpperCase();
         return SHIPNAMES.find(name => name.startsWith(upper)) || null;
     }
-}
 
+    static findPlayerByName(name: string): Player | undefined {
+        return [...players].find(p => p.ship && p.ship.name === name);
+    }
+
+
+}
 
 

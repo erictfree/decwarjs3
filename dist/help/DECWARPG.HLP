@@ -1,0 +1,48 @@
+.ACTIVATE
+Exit the Pre‑game lobby and enter ship setup.  
+Syntax:  ACtivate  
+         AC  
+No arguments.  
+Assigns you a ship and switches the prompt from PG to Command:
+
+.GRIPE
+Submit a gripe (bug report or suggestion) without entering the game.  
+Syntax:  Gripe <text>  
+         GR <text>  
+Arguments: free‑form text (end with ^Z to send or ^C to cancel).  
+Appends your comment to the gripe log.
+
+.HELP
+Display online help for Pre‑game commands.  
+Syntax:  HE lp [*|<command>]  
+         HE [*|<command>]  
+No other arguments.  
+With no argument, lists available Pre‑game commands; use `*` to list every command or specify a command name to see its detailed description
+
+.NEWS
+Show recent enhancements and bug‑fix notes.  
+Syntax:  NE ws  
+         NE  
+No arguments.  
+Displays the DECWAR news file containing feature and fix announcements
+
+.TIME
+Display timing and clock information.  
+Syntax:  TI me  
+         TI  
+No arguments.  
+Lists current stardate, time since game start, time since activation, and real‑world time
+
+.USERS
+List all players waiting or active in the game.  
+Syntax:  US ers  
+         US  
+No arguments.  
+Displays each ship‑name and its assigned captain in the Pre‑game lobby
+
+.QUIT
+Exit DECWAR and return to the system monitor.  
+Syntax:  Qu it  
+         QU  
+No arguments.  
+Aborts the Pre‑game session, freeing your ship for another player

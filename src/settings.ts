@@ -14,7 +14,7 @@ export type PromptSetting = "NORMAL" | "INFORMATIVE";
 export type CoordMode = "ABSOLUTE" | "RELATIVE" | "COMPUTED";
 export type ICDEF = "ABSOLUTE" | "RELATIVE";
 export type OCDEF = "ABSOLUTE" | "RELATIVE" | "BOTH";
-export type ShipCondition = "RED" | "YELLOW" | "GREEN";
+export type Condition = "RED" | "YELLOW" | "GREEN";
 export type OutputSetting = "SHORT" | "MEDIUM" | "LONG";
 
 export const SYMBOL_ROMULAN = "R";
@@ -34,7 +34,7 @@ export const PLANET_WARNING_DISTANCE = 2;
 export const BLACKHOLE_WARNING_DISTANCE = 1;
 export const DEFAULT_SCAN_RANGE = 10;
 export const DEFAULT_SRS_RANGE = 7;
-
+export const INITIAL_BASE_STRENGTH = 1000;
 
 export type Side = "NEUTRAL" | "FEDERATION" | "EMPIRE" | "ROMULAN";
 
