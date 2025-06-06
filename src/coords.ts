@@ -4,7 +4,7 @@ import { Blackhole } from "./blackhole.js";
 import { Star } from "./star.js";
 import { Player } from "./player.js";
 import { Ship } from "./ship.js";
-import { GRID_HEIGHT, GRID_WIDTH } from "./settings.js";
+import { GRID_HEIGHT, GRID_WIDTH, OCDEF } from "./settings.js";
 
 export type Position = {
     v: number;
@@ -58,4 +58,25 @@ export function findEmptyLocation(): Position | null {
         }
     }
     return null; // fallback if map is saturated
+}
+
+export function ocdefCoords(
+    ocdef: OCDEF,
+    source: Position,
+    location: Position
+): string {
+    const abs = `${location.v}-${location.h}`;
+    const relV = location.v - source.v;
+    const relH = location.h - source.h;
+    const rel = `${relV >= 0 ? "+" : ""}${relV} ${relH >= 0 ? "+" : ""}${relH}`;
+
+    switch (ocdef) {
+        case "RELATIVE":
+            return rel;
+        case "BOTH":
+            return `${abs} (${rel})`;
+        case "ABSOLUTE":
+        default:
+            return abs;
+    }
 }

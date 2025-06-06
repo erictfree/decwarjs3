@@ -11,14 +11,14 @@ import { planetsCommand } from './planets.js';
 // import { buildCommand } from './build.js';
 // import { dockCommand } from './dock.js';
 import { shortRangeScanCommand } from './srs.js';
-// import { statusCommand } from './status.js';
+import { statusCommand } from './status.js';
 // import { pointsCommand } from './points.js';
 import { summaryCommand } from './summary.js';
 import { listCommand } from './list.js';
 import { basesCommand } from './bases.js';
 import { targetsCommand } from './targets.js';
 import { tellCommand } from './tell.js';
-// import { setCommand } from './set.js';
+import { setCommand } from './set.js';
 // import { phaserCommand } from './phaser.js';
 import { newsCommand } from './news.js';
 // import { torpedoCommand } from './torpedo.js';
@@ -28,9 +28,9 @@ import { timeCommand } from './time.js';
 import { tractorCommand } from './tractor.js';
 // import { impulseCommand } from './move.js';
 // import { xgridCommand } from './grid.js';
-// import { energyCommand } from './energy.js';
+import { energyCommand } from './energy.js';
 // import { damagesCommand } from './damage.js';
-// import { typeCommand } from './type.js';
+import { typeCommand } from './type.js';
 import { gripeCommand } from './gripe.js';
 import { quitCommand } from './quit.js';
 // import { restartCommand } from './restart.js';
@@ -46,7 +46,6 @@ interface TokenizedInput {
 
 // eslint-disable-next-line no-unused-vars
 export type CommandHandler = (player: Player, command: Command, done?: () => void) => void;
-
 
 export class Command {
     constructor(
@@ -70,7 +69,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     // ["DA", damagesCommand],
     // ["DO", dockCommand],
     // //["UD", defaultHandler],
-    // ["EN", energyCommand],
+    ["EN", energyCommand],
     ["GR", gripeCommand],
     ["H", helpCommand],
     ["?", helpCommand],
@@ -87,17 +86,17 @@ const decwarCommands = new Map<string, CommandHandler>([
     // ["RE", repairCommand],
     // ["RS", restartCommand],
     ["SC", scanCommand],
-    // ["SE", setCommand],
+    ["SE", setCommand],
     ["SH", shieldCommand],
     ["SR", shortRangeScanCommand],
-    // ["ST", statusCommand],
+    ["ST", statusCommand],
     ["SU", summaryCommand],
     ["TA", targetsCommand],
     ["TE", tellCommand],
     ["TI", timeCommand],
     // ["TO", torpedoCommand],
     ["TR", tractorCommand],
-    // ["TY", typeCommand],
+    ["TY", typeCommand],
     // ["U", usersCommand],
     // ["XGRID", xgridCommand]
 ]);

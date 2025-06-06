@@ -1,3 +1,5 @@
+import { VERSION } from "./version.js";
+
 export const GRID_WIDTH = 75;
 export const GRID_HEIGHT = 75;
 export const MAX_PLAYERS = 18;
@@ -51,3 +53,20 @@ export const EMPIRE_SHIPS: string[] = [
 ];
 
 export const SHIPNAMES: string[] = [...FEDERATION_SHIPS, ...EMPIRE_SHIPS];
+
+export const settings = {
+    stardate: 0,
+    version: "0.3" + VERSION,
+    date: "2025-06-06",
+    allowRomulans: true,
+    allowBlackHoles: true,
+    outputDetail: "FULL",
+    promptStyle: "DEFAULT",
+    sensorScanDetail: "DEFAULT",
+    coordInputDefault: "DEFAULT",
+    coordOutputDefault: "DEFAULT",
+    ttyType: "DEFAULT",
+    allowGripe: true,
+    gameNumber: 1,
+    timeConsumingMoves: 0
+};

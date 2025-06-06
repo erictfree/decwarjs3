@@ -30,7 +30,7 @@ export class Ship {
     public energy: number;
     public shieldsUp: boolean;
     public level: number;
-    public name: string | null;
+    public name: string;
     public isDestroyed: boolean;
     public side: Side;
     public docked: boolean;
@@ -64,7 +64,7 @@ export class Ship {
         this.shieldsUp = false;
         this.level = MAX_SHIELD_ENERGY;
         this.docked = false;
-        this.name = null;
+        this.name = "Unknown";
         this.isDestroyed = false;
         this.side = "NEUTRAL";
         this.tractorPartner = null;
