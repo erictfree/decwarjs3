@@ -5,7 +5,7 @@ import { Player } from './player.js';
 // import { moveCommand } from './move.js';
 import { helpCommand } from './help.js';
 import { shieldCommand } from './shield.js';
-// import { radioCommand } from './radio.js';
+import { radioCommand } from './radio.js';
 import { planetsCommand } from './planets.js';
 // import { captureCommand } from './capture.js';
 // import { buildCommand } from './build.js';
@@ -17,7 +17,7 @@ import { summaryCommand } from './summary.js';
 import { listCommand } from './list.js';
 import { basesCommand } from './bases.js';
 import { targetsCommand } from './targets.js';
-// import { tellCommand } from './tell.js';
+import { tellCommand } from './tell.js';
 // import { setCommand } from './set.js';
 // import { phaserCommand } from './phaser.js';
 import { newsCommand } from './news.js';
@@ -83,7 +83,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     // ["PO", pointsCommand],
     // ["PR", promoteCommand],
     // ["Q", quitCommand],
-    // ["RA", radioCommand],
+    ["RA", radioCommand],
     // ["RE", repairCommand],
     // ["RS", restartCommand],
     ["SC", scanCommand],
@@ -93,7 +93,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     // ["ST", statusCommand],
     ["SU", summaryCommand],
     ["TA", targetsCommand],
-    // ["TE", tellCommand],
+    ["TE", tellCommand],
     ["TI", timeCommand],
     // ["TO", torpedoCommand],
     ["TR", tractorCommand],
