@@ -1,0 +1,43 @@
+{
+  "name": "decwarjs3",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "build": "tsc && copyfiles -u 1 src/help/{news.txt,DECWAR.HLP,DECWARPG.HLP} dist",
+    "start": "node dist/server.js",
+    "lint": "eslint 'src/**/*.{ts,js}'",
+    "format": "prettier --write 'src/**/*.{ts,js,json,md}'"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.28.0",
+    "@types/node": "^22.15.29",
+    "@types/seedrandom": "^3.0.8",
+    "@typescript-eslint/eslint-plugin": "^8.33.1",
+    "@typescript-eslint/parser": "^8.33.1",
+    "copyfiles": "^2.4.1",
+    "eslint": "^9.28.0",
+    "globals": "^16.2.0",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.33.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/erictfree/decwarjs3.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/erictfree/decwarjs3/issues"
+  },
+  "homepage": "https://github.com/erictfree/decwarjs3#readme",
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "seedrandom": "^3.0.5"
+  }
+}
