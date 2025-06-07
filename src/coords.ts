@@ -16,35 +16,6 @@ export function chebyshev(a: Position, b: Position): number {
     return Math.max(Math.abs(a.v - b.v), Math.abs(a.h - b.h));
 }
 
-// // TODO is this the right semantics? or should BlackHoles be included?
-// export function spaceOccupied(x: number, y: number): boolean {
-//     return (
-//         // Planets
-//         planets.some(p => p.position.x === x && p.position.y === y) ||
-
-//         // All bases
-//         bases.federation.some(b => b.position.x === x && b.position.y === y) ||
-//         bases.empire.some(b => b.position.x === x && b.position.y === y) ||
-
-//         // Other ships
-//         [...players].some(p =>
-//             p.ship.position.x === x && p.ship.position.y === y
-//         ) ||
-
-//         // Stars
-//         stars.some(s => s.x === x && s.y === y)
-//     );
-// }
-
-// export function spaceOccupiedIncludingBlackHole(x: number, y: number): boolean {
-//     return (
-//         spaceOccupied(x, y) ||
-//         // Black holes
-//         blackHoles.some(bh => bh.x === x && bh.y === y)
-//     );
-// }
-
-
 /**
  * Finds a Planet, BlackHole, or Ship at the given (v, h) position.
  * Returns { v, h, obj } if found, otherwise null.
@@ -212,4 +183,10 @@ export function* bresenhamLine(v0: number, h0: number, v1: number, h1: number) {
         if (e2 > -dv) { err -= dv; h0 += sh; }
         if (e2 < dh) { err += dh; v0 += sv; }
     }
+}
+
+export function isAdjacent(pos1: Position, pos2: Position): boolean {
+    const dv = Math.abs(pos1.v - pos2.v);
+    const dh = Math.abs(pos1.h - pos2.h);
+    return (dh <= 1 && dv <= 1) && !(dh === 0 && dv === 0);
 }

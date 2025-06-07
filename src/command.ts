@@ -9,7 +9,7 @@ import { radioCommand } from './radio.js';
 import { planetsCommand } from './planets.js';
 import { captureCommand } from './capture.js';
 // import { buildCommand } from './build.js';
-// import { dockCommand } from './dock.js';
+import { dockCommand } from './dock.js';
 import { shortRangeScanCommand } from './srs.js';
 import { statusCommand } from './status.js';
 import { pointsCommand } from './points.js';
@@ -67,7 +67,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["CA", captureCommand],
     ["CL", clearCommand],
     ["DA", damagesCommand],
-    // ["DO", dockCommand],
+    ["DO", dockCommand],
     // //["UD", defaultHandler],
     ["EN", energyCommand],
     ["GR", gripeCommand],

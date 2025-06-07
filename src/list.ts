@@ -126,7 +126,6 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         // filters by range
         if (clause.rangeFilters.length > 0) {
             if (clause.rangeFilters.includes("CLOSEST")) {
-                console.log("closest");
                 if (allShips.length > 0) {
                     const closestShip = allShips.reduce((a, b) =>
                     // Find the closest ship to player.ship, but skip player.ship itself

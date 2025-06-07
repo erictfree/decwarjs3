@@ -191,7 +191,7 @@ function formatScores(scores: Score[]): string {
   for (const score of scores) {
     result += score.label.padStart(colWidth);
   }
-  result += "\n";
+  result += "\r\n";
 
   // Build data rows
   for (const header of headers) {

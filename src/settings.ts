@@ -19,6 +19,9 @@ export const INITIAL_BASE_STRENGTH = 1000;
 export const CAPTURE_DELAY_MIN_MS = 1000;
 export const WARP_DELAY_MIN_MS = 2000;
 export const WARP_DELAY_RANGE = 2000; // So delay = 500–999ms
+export const DOCK_DELAY_RANGE = 2000; // So delay = 2000–3999ms
+export const DOCK_DELAY_MIN_MS = 2000;
+
 
 export type ScanSetting = "LONG" | "SHORT";
 export type PromptSetting = "NORMAL" | "INFORMATIVE";
