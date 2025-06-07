@@ -1,7 +1,6 @@
 import { Player } from './player.js';
-// import { promoteCommand } from './admin.js';
+import { promoteCommand } from './util/admin.js';
 import { usersCommand } from './users.js';
-// import { sendMessageToClient } from './communication.js';
 import { moveCommand } from './move.js';
 import { helpCommand } from './help.js';
 import { shieldCommand } from './shield.js';
@@ -33,7 +32,7 @@ import { damagesCommand } from './damage.js';
 import { typeCommand } from './type.js';
 import { gripeCommand } from './gripe.js';
 import { quitCommand } from './quit.js';
-// import { restartCommand } from './restart.js';
+import { restartCommand } from './util/restart.js';
 import { clearCommand } from './util/clear.js';
 import { sendMessageToClient } from './communication.js';
 
@@ -80,11 +79,11 @@ const decwarCommands = new Map<string, CommandHandler>([
     // ["PH", phaserCommand],
     ["PL", planetsCommand],
     ["PO", pointsCommand],
-    // ["PR", promoteCommand],
+    ["PR", promoteCommand],
     ["Q", quitCommand],
     ["RA", radioCommand],
     // ["RE", repairCommand],
-    // ["RS", restartCommand],
+    ["RS", restartCommand],
     ["SC", scanCommand],
     ["SE", setCommand],
     ["SH", shieldCommand],
