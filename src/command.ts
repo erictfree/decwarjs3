@@ -25,7 +25,7 @@ import { repairCommand } from './repair.js';
 import { scanCommand } from './scan.js';
 import { timeCommand } from './time.js';
 import { tractorCommand } from './tractor.js';
-// import { impulseCommand } from './move.js';
+import { impulseCommand } from './move.js';
 import { energyCommand } from './energy.js';
 import { damagesCommand } from './damage.js';
 import { typeCommand } from './type.js';
@@ -71,7 +71,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["GR", gripeCommand],
     ["H", helpCommand],
     ["?", helpCommand],
-    // ["IM", impulseCommand],
+    ["IM", impulseCommand],
     ["LI", listCommand],
     ["M", moveCommand],
     ["NE", newsCommand],

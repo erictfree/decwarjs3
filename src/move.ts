@@ -7,8 +7,8 @@ import {
 } from "./communication.js";
 import { Ship, applyDeviceDamage } from "./ship.js";
 import { bresenhamLine } from "./coords.js";
-import { GRID_WIDTH, GRID_HEIGHT, WARP_DELAY_MIN_MS, WARP_DELAY_RANGE } from "./settings.js";
-import { getCoordsFromCommandArgs, findObjectAtPosition, ocdefCoords } from "./coords.js";
+import { GRID_WIDTH, GRID_HEIGHT, WARP_DELAY_MIN_MS, WARP_DELAY_RANGE, IMPULSE_DELAY_MS, IMPULSE_DELAY_RANGE } from "./settings.js";
+import { getCoordsFromCommandArgs, findObjectAtPosition, ocdefCoords, isAdjacent, getTrailingPosition } from "./coords.js";
 import { Player } from "./player.js";
 import { Command } from "./command.js";
 
@@ -164,7 +164,7 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
             releaseClient(player);
             ship.position = { v: destination.v, h: destination.h };
             sendMessageToClient(player, message);
-            // if (ship.tractorPartner) tractorShip(ship);// TODO
+            if (ship.tractorPartner) tractorShip(ship);
         }
         done?.();
     }, delayMs);
@@ -193,110 +193,120 @@ function maybeDamageFromWarp(ship: Ship, warpDistance: number): void {
     }
 }
 
-// export function impulseCommand(player: Player, command: Command, done?: () => void): void {
-//     const ship = player.ship;
+export function impulseCommand(player: Player, command: Command, done?: () => void): void {
+    if (!player.ship) {
+        sendMessageToClient(player, "You must be in a ship to use this command.");
+        done?.();
+        return;
+    }
 
-//     if (!ensureDeviceOperational(player, "impulse")) {
-//         done?.();
-//         return;
-//     }
+    const ship = player.ship;
 
-//     const { x, y, mode, error } = parseCoordsFromArgs(
-//         player,
-//         command.args,
-//         ship.position.x,
-//         ship.position.y,
-//         false // COMPUTED not allowed for IMPULSE
-//     );
+    if (!ship.isDeviceOperational("impulse")) {
+        done?.();
+        return;
+    }
 
-//     if (error) {
-//         sendOutputMessage(player, {
-//             SHORT: "IMP > BAD COORD",
-//             MEDIUM: `Bad IMPULSE input (${mode})`,
-//             LONG: `Invalid IMPULSE command: ${error} in ${mode}`
-//         });
-//         done?.();
-//         return;
-//     }
+    const { position: { v: targetVInput, h: targetHInput }, mode, error } = getCoordsFromCommandArgs(
+        player,
+        command.args,
+        ship.position.v,
+        ship.position.h,
+        false // COMPUTED not allowed for IMPULSE
+    );
 
-//     const destination = { x, y };
+    if (error) {
+        sendOutputMessage(player, {
+            SHORT: "IMP > BAD COORD",
+            MEDIUM: `Bad IMPULSE input (${mode})`,
+            LONG: `Invalid IMPULSE command: ${error} in ${mode}`
+        });
+        done?.();
+        return;
+    }
 
-//     // DECWAR: only cardinal directions allowed
-//     if (!isAdjacent(ship.position, destination)) {
-//         sendOutputMessage(player, {
-//             SHORT: "IMP > RANGE",
-//             MEDIUM: "Not adjacent.",
-//             LONG: "IMPULSE move must be to an adjacent sector."
-//         });
-//         done?.();
-//         return;
-//     }
+    const destination = { v: targetVInput, h: targetHInput };
 
-//     if (spaceOccupied(destination.x, destination.y)) {
-//         sendOutputMessage(player, {
-//             SHORT: "IMP > OCCUPIED",
-//             MEDIUM: "Impulse failed: blocked.",
-//             LONG: "IMPULSE failed: destination sector is occupied."
-//         });
-//         done?.();
-//         return;
-//     }
+    // DECWAR: only cardinal directions allowed
+    if (!isAdjacent(ship.position, destination)) {
+        sendOutputMessage(player, {
+            SHORT: "IMP > RANGE",
+            MEDIUM: "Not adjacent.",
+            LONG: "IMPULSE move must be to an adjacent sector."
+        });
+        done?.();
+        return;
+    }
 
-//     let energyCost = 1;
-//     if (ship.shield.shieldsUp) {
-//         energyCost *= 2;
-//     }
+    if (findObjectAtPosition(destination.v, destination.h)) {
+        sendOutputMessage(player, {
+            SHORT: "IMP > OCCUPIED",
+            MEDIUM: "Impulse failed: blocked.",
+            LONG: "IMPULSE failed: destination sector is occupied."
+        });
+        done?.();
+        return;
+    }
 
-//     if (ship.energy < energyCost) {
-//         sendOutputMessage(player, {
-//             SHORT: "IMP > NO E",
-//             MEDIUM: "Not enough energy.",
-//             LONG: "IMPULSE failed: not enough energy."
-//         });
-//         done?.();
-//         return;
-//     }
+    let energyCost = 1;
+    if (ship.shieldsUp) {
+        energyCost *= 2;
+    }
+    // TODO tractor?
 
-//     if (ship.docked) {
-//         ship.docked = false;
-//         sendMessageToClient(player, "You have undocked.");
-//     }
+    if (ship.energy < energyCost) {
+        sendOutputMessage(player, {
+            SHORT: "IMP > NO E",
+            MEDIUM: "Not enough energy.",
+            LONG: "IMPULSE failed: not enough energy."
+        });
+        done?.();
+        return;
+    }
 
-//     ship.energy -= energyCost;
+    if (ship.docked) {
+        ship.docked = false;
+        sendMessageToClient(player, "You have undocked.");
+    }
 
-//     updateShipCondition(player);
+    ship.energy -= energyCost;
 
-//     maybeMisnavigate(player, destination);
+    // updateShipCondition(player);  TODO
 
-//     putClientOnHold(player, "Impulse power...");
+    maybeMisnavigate(player, destination);  // TODO TEST
 
-//     const delayMs = IMPULSE_DELAY_MS + Math.random() * IMPULSE_DELAY_RANGE;
+    putClientOnHold(player, "Impulse power...");
 
-//     const timer = setTimeout(() => {
-//         releaseClient(player);
-//         if (spaceOccupied(destination.x, destination.y)) {
-//             sendOutputMessage(player, {
-//                 SHORT: "IMP > NOW BLOCKED",
-//                 MEDIUM: "Impulse failed: now occupied.",
-//                 LONG: "IMPULSE failed: destination sector is now occupied."
-//             });
-//             done?.();
-//             return;
-//         }
 
-//         ship.position = destination;
-//         sendMessageToClient(player, `IMPULSE complete to sector ${formatCoordsForPlayer(destination.y, destination.x, player)}`);
-//         done?.();
-//     }, delayMs);
+    const delayMs = IMPULSE_DELAY_MS + Math.random() * IMPULSE_DELAY_RANGE;
 
-//     player.currentCommandTimer = timer;
-//     starbasePhaserDefense(player);
-// }
+    const timer = setTimeout(() => {
+        releaseClient(player);
+        if (findObjectAtPosition(destination.v, destination.h)) {
+            sendOutputMessage(player, {
+                SHORT: "IMP > NOW BLOCKED",
+                MEDIUM: "Impulse failed: now occupied.",
+                LONG: "IMPULSE failed: destination sector is now occupied."
+            });
+            done?.();
+            return;
+        }
+
+        let coords = ocdefCoords(player.settings.ocdef, ship.position, destination);
+        ship.position = destination;
+        sendMessageToClient(player, `IMPULSE complete to sector ${coords}`);
+
+        // tractorShip(ship);  TODO??
+        done?.();
+    }, delayMs);
+
+    player.currentCommandTimer = timer;
+    // starbasePhaserDefense(player);  TODO
+}
 
 function maybeMisnavigate(player: Player, destination: { v: number; h: number }): void {
     if (!player.ship) return;
     const ship = player.ship;
-
 
     if (ship.devices.computer >= 300) {
         sendMessageToClient(player, "Navigation is inexact: computer inoperative.");
@@ -309,16 +319,17 @@ function maybeMisnavigate(player: Player, destination: { v: number; h: number })
     }
 }
 
-// function tractorShip(ship: Ship): void {
-//     if (!ship.tractorPartner) return;
+function tractorShip(ship: Ship): void {
+    if (!ship.tractorPartner) return;
 
-//     const trailingPosition = getTrailingPosition(ship.position, ship.tractorPartner.position);
-//     if (!trailingPosition) {
-//         disconnectTractor(ship);
-//     } else {
-//         ship.tractorPartner.position = trailingPosition;
-//         sendMessageToClient(ship.tractorPartner.player, `${ship.name} has moved to ${formatCoordsForPlayer(trailingPosition.y, trailingPosition.x, ship.player)}.`);
-//         addPendingMessage(ship.tractorPartner.player, `You were tractored to ${formatCoordsForPlayer(trailingPosition.y, trailingPosition.x, ship.tractorPartner.player)}.`);
-//     }
-// }
+    const trailingPosition = getTrailingPosition(ship.position, ship.tractorPartner.position);
+    if (!trailingPosition) {
+        disconnectTractor(ship);
+    } else {
+        ship.tractorPartner.position = trailingPosition;
+        let coords = ocdefCoords(ship.tractorPartner.player.settings.ocdef, ship.tractorPartner.position, trailingPosition);
+        sendMessageToClient(ship.tractorPartner.player, `${ship.name} has moved to ${coords}.`);
+        addPendingMessage(ship.tractorPartner.player, `You were tractored to @${trailingPosition.v}-${trailingPosition.h}}.`);
+    }
+}
 

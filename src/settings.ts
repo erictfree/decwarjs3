@@ -30,6 +30,8 @@ export const SHIELD_REPAIR_AMOUNT = 500;
 export const ENERGY_REPAIR_AMOUNT = 1000;
 export const DESTRUCTION_DAMAGE_THRESHOLD = 2500;
 export const PHASER_COOLDOWN = 1000;
+export const IMPULSE_DELAY_MS = 2000;
+export const IMPULSE_DELAY_RANGE = 2000; // So delay = 1000–1999ms
 
 export type ScanSetting = "LONG" | "SHORT";
 export type PromptSetting = "NORMAL" | "INFORMATIVE";

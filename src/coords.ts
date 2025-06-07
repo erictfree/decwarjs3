@@ -190,3 +190,59 @@ export function isAdjacent(pos1: Position, pos2: Position): boolean {
     const dh = Math.abs(pos1.h - pos2.h);
     return (dh <= 1 && dv <= 1) && !(dh === 0 && dv === 0);
 }
+
+export function getTrailingPosition(origin: Position, destination: Position): Position | null {
+    // Helper to check if a position is within grid boundaries
+    const isWithinGrid = (pos: Position): boolean =>
+        pos.v >= 1 &&
+        pos.h >= 1 &&
+        pos.v <= GRID_HEIGHT &&
+        pos.h <= GRID_WIDTH;
+
+    // Sort origin's adjacent positions by distance to destination
+    const sortedOriginAdjacents = getAdjacentPositions(origin)
+        .filter(pos => isWithinGrid(pos) && !findObjectAtPosition(pos.v, pos.h))
+        .sort((a, b) => distance(b, destination) - distance(a, destination)); // trailing = farther from destination
+
+    if (sortedOriginAdjacents.length > 0) {
+        const result = sortedOriginAdjacents[0];
+        if (isWithinGrid(result)) { // Explicit check for clarity
+            return result;
+        }
+        // If somehow not in bounds (shouldn't happen), proceed to fallback
+    }
+
+    // Fallback: try positions around the destination
+    const sortedDestinationAdjacents = getAdjacentPositions(destination)
+        .filter(pos => isWithinGrid(pos) && !findObjectAtPosition(pos.v, pos.h))
+        .sort((a, b) => distance(a, origin) - distance(b, origin)); // prefer closer to the line from origin to destination
+
+    if (sortedDestinationAdjacents.length > 0) {
+        const result = sortedDestinationAdjacents[0];
+        if (isWithinGrid(result)) { // Explicit check for clarity
+            return result;
+        }
+        // If somehow not in bounds (shouldn't happen), return null
+    }
+
+    // No valid trailing position found
+    return null;
+}
+
+function distance(a: Position, b: Position): number {    // is thislegit? why
+    return Math.hypot(a.v - b.v, a.h - b.h);
+}
+
+function getAdjacentPositions(pos: Position): Position[] {
+    const deltas = [
+        { v: 0, h: -1 }, // up
+        { v: 0, h: 1 },  // down
+        { v: -1, h: 0 }, // left
+        { v: 1, h: 0 },  // right
+        { v: -1, h: -1 }, // up-left
+        { v: 1, h: -1 },  // up-right
+        { v: -1, h: 1 },  // down-left
+        { v: 1, h: 1 },   // down-right
+    ];
+    return deltas.map(delta => ({ v: pos.v + delta.v, h: pos.h + delta.h }));
+}
