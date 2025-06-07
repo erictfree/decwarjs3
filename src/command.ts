@@ -20,7 +20,7 @@ import { tellCommand } from './tell.js';
 import { setCommand } from './set.js';
 import { phaserCommand } from './phaser.js';
 import { newsCommand } from './news.js';
-// import { torpedoCommand } from './torpedo.js';
+import { torpedoCommand } from './torpedo.js';
 import { repairCommand } from './repair.js';
 import { scanCommand } from './scan.js';
 import { timeCommand } from './time.js';
@@ -92,7 +92,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["TA", targetsCommand],
     ["TE", tellCommand],
     ["TI", timeCommand],
-    // ["TO", torpedoCommand],
+    ["TO", torpedoCommand],
     ["TR", tractorCommand],
     ["TY", typeCommand],
     ["U", usersCommand]

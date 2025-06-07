@@ -22,7 +22,8 @@ export function chebyshev(a: Position, b: Position): number {
  */
 export function findObjectAtPosition(
     v: number,
-    h: number
+    h: number,
+    ignoreBlackholes: boolean = false
 ): { v: number; h: number; obj: Ship | Planet | Star | Blackhole } | null {
     for (const player of players) {
         if (player.ship && player.ship.position.v === v && player.ship.position.h === h) {
@@ -41,9 +42,11 @@ export function findObjectAtPosition(
             return { v, h, obj: star };
         }
     }
-    for (const bh of blackholes) {
-        if (bh.position.v === v && bh.position.h === h) {
-            return { v, h, obj: bh };
+    if (!ignoreBlackholes) {
+        for (const bh of blackholes) {
+            if (bh.position.v === v && bh.position.h === h) {
+                return { v, h, obj: bh };
+            }
         }
     }
     return null;
@@ -192,21 +195,14 @@ export function isAdjacent(pos1: Position, pos2: Position): boolean {
 }
 
 export function getTrailingPosition(origin: Position, destination: Position): Position | null {
-    // Helper to check if a position is within grid boundaries
-    const isWithinGrid = (pos: Position): boolean =>
-        pos.v >= 1 &&
-        pos.h >= 1 &&
-        pos.v <= GRID_HEIGHT &&
-        pos.h <= GRID_WIDTH;
-
     // Sort origin's adjacent positions by distance to destination
     const sortedOriginAdjacents = getAdjacentPositions(origin)
-        .filter(pos => isWithinGrid(pos) && !findObjectAtPosition(pos.v, pos.h))
+        .filter(pos => isInBounds(pos.v, pos.h) && !findObjectAtPosition(pos.v, pos.h))
         .sort((a, b) => distance(b, destination) - distance(a, destination)); // trailing = farther from destination
 
     if (sortedOriginAdjacents.length > 0) {
         const result = sortedOriginAdjacents[0];
-        if (isWithinGrid(result)) { // Explicit check for clarity
+        if (isInBounds(result.v, result.h)) { // Explicit check for clarity
             return result;
         }
         // If somehow not in bounds (shouldn't happen), proceed to fallback
@@ -214,12 +210,12 @@ export function getTrailingPosition(origin: Position, destination: Position): Po
 
     // Fallback: try positions around the destination
     const sortedDestinationAdjacents = getAdjacentPositions(destination)
-        .filter(pos => isWithinGrid(pos) && !findObjectAtPosition(pos.v, pos.h))
+        .filter(pos => isInBounds(pos.v, pos.h) && !findObjectAtPosition(pos.v, pos.h))
         .sort((a, b) => distance(a, origin) - distance(b, origin)); // prefer closer to the line from origin to destination
 
     if (sortedDestinationAdjacents.length > 0) {
         const result = sortedDestinationAdjacents[0];
-        if (isWithinGrid(result)) { // Explicit check for clarity
+        if (isInBounds(result.v, result.h)) { // Explicit check for clarity
             return result;
         }
         // If somehow not in bounds (shouldn't happen), return null
@@ -245,4 +241,8 @@ function getAdjacentPositions(pos: Position): Position[] {
         { v: 1, h: 1 },   // down-right
     ];
     return deltas.map(delta => ({ v: pos.v + delta.v, h: pos.h + delta.h }));
+}
+
+export function isInBounds(v: number, h: number): boolean {
+    return h >= 1 && h < GRID_WIDTH && v >= 1 && v < GRID_HEIGHT;
 }

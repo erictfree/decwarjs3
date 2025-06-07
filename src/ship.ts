@@ -1,8 +1,9 @@
 import { addPendingMessage, sendMessageToClient, sendOutputMessage } from './communication.js';
-import { Position, findEmptyLocation, chebyshev } from './coords.js';
+import { isInBounds, Position, findEmptyLocation, chebyshev, findObjectAtPosition, ocdefCoords, isAdjacent } from './coords.js';
 import { SHIPNAMES, Side, Condition, MAX_TORPEDOES, MAX_SHIP_ENERGY, MAX_SHIELD_ENERGY } from './settings.js';
 import { Player } from './player.js';
-import { players } from './game.js';
+import { players, bases, planets } from './game.js';
+import { Planet } from './planet.js';
 
 
 type Cooldowns = {
@@ -367,4 +368,87 @@ export function getNearbyAlliedShips(v: number, h: number, side: string, range: 
 
         return chebyshev(p.ship.position, { v: v, h: h }) <= range;
     });
+}
+
+export function attemptDisplaceFromImpact(attacker: Player, target: Player): void {
+    if (!target.ship || !attacker.ship) return;
+
+    const from = attacker.ship.position;
+    const to = target.ship.position;
+
+    const dv = Math.sign(to.v - from.v); // impact direction on Y
+    const dh = Math.sign(to.h - from.h); // impact direction on X
+
+
+    const newV = to.v + dv;
+    const newH = to.h + dh;
+
+    if (!isInBounds(newV, newH)) return;
+
+    // Do not displace if the space is occupied by any game object (ship, planet, base, etc.)
+    if (!findObjectAtPosition(newV, newH, true)) return;
+
+    // Displace the ship
+    target.ship.position = { v: newV, h: newH };
+
+    let coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, { v: newV, h: newH });
+    addPendingMessage(target, `You were displaced to ${coords} by the torpedo impact.`);
+    sendMessageToClient(attacker, `${target.ship.name} was knocked to ${newV}-${newH}.`);
+}
+
+
+
+export function getAdjacentFriendlyPlanets(ship: Ship): Planet[] {
+    const { v, h } = ship.position;
+    const team = ship.side;
+
+    const adjacent: Planet[] = [];
+
+    let friendlyBases: Planet[] = [];
+    if (team === "FEDERATION") {
+        friendlyBases = bases.federation;
+    } else {
+        friendlyBases = bases.empire;
+    }
+
+    for (const planet of planets) {
+        if (
+            planet.side === team &&
+            isAdjacent({ v, h }, planet.position) &&
+            !adjacent.some(obj =>
+                obj.position.v === planet.position.v &&
+                obj.position.h === planet.position.h
+            )
+        ) {
+            adjacent.push(planet);
+        }
+    }
+
+    return adjacent;
+}
+
+export function handleUndockForAllShipsAfterPortDestruction(destroyedPort: Planet): void {
+    for (const player of players) {
+        if (!player.ship) continue;
+        const ship = player.ship;
+
+        // Only consider ships that are currently docked
+        if (!ship.docked) continue;
+
+        // Check adjacency to the destroyed object
+        if (!isAdjacent(ship.position, destroyedPort.position)) continue;
+
+        // Run undocking logic
+        handleUndockAfterPortDestruction(ship);
+    }
+}
+
+// is this needed?
+
+export function handleUndockAfterPortDestruction(ship: Ship): void {
+    const remainingPorts = getAdjacentFriendlyPlanets(ship);
+    if (ship.docked && remainingPorts.length <= 1) {
+        ship.docked = false;
+        addPendingMessage(ship.player, "Your docking port was destroyed. You are now undocked.");
+    }
 }

@@ -8,7 +8,7 @@ import {
 import { Ship, applyDeviceDamage } from "./ship.js";
 import { bresenhamLine } from "./coords.js";
 import { GRID_WIDTH, GRID_HEIGHT, WARP_DELAY_MIN_MS, WARP_DELAY_RANGE, IMPULSE_DELAY_MS, IMPULSE_DELAY_RANGE } from "./settings.js";
-import { getCoordsFromCommandArgs, findObjectAtPosition, ocdefCoords, isAdjacent, getTrailingPosition } from "./coords.js";
+import { isInBounds, getCoordsFromCommandArgs, findObjectAtPosition, ocdefCoords, isAdjacent, getTrailingPosition } from "./coords.js";
 import { Player } from "./player.js";
 import { Command } from "./command.js";
 
@@ -54,10 +54,7 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
         return;
     }
 
-    if (
-        targetHInput < 1 || targetHInput > GRID_WIDTH ||
-        targetVInput < 1 || targetVInput > GRID_HEIGHT
-    ) {
+    if (!isInBounds(targetVInput, targetHInput)) {
         sendOutputMessage(player, {
             SHORT: "MOVE > OUT OF BOUNDS",
             MEDIUM: "Invalid MOVE target sector.",

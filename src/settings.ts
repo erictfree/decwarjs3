@@ -32,6 +32,7 @@ export const DESTRUCTION_DAMAGE_THRESHOLD = 2500;
 export const PHASER_COOLDOWN = 1000;
 export const IMPULSE_DELAY_MS = 2000;
 export const IMPULSE_DELAY_RANGE = 2000; // So delay = 1000–1999ms
+export const MAX_TORPEDO_RANGE = 10;
 
 export type ScanSetting = "LONG" | "SHORT";
 export type PromptSetting = "NORMAL" | "INFORMATIVE";
