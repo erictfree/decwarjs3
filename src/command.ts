@@ -18,7 +18,7 @@ import { basesCommand } from './bases.js';
 import { targetsCommand } from './targets.js';
 import { tellCommand } from './tell.js';
 import { setCommand } from './set.js';
-// import { phaserCommand } from './phaser.js';
+import { phaserCommand } from './phaser.js';
 import { newsCommand } from './news.js';
 // import { torpedoCommand } from './torpedo.js';
 import { repairCommand } from './repair.js';
@@ -26,7 +26,6 @@ import { scanCommand } from './scan.js';
 import { timeCommand } from './time.js';
 import { tractorCommand } from './tractor.js';
 // import { impulseCommand } from './move.js';
-// import { xgridCommand } from './grid.js';
 import { energyCommand } from './energy.js';
 import { damagesCommand } from './damage.js';
 import { typeCommand } from './type.js';
@@ -76,7 +75,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["LI", listCommand],
     ["M", moveCommand],
     ["NE", newsCommand],
-    // ["PH", phaserCommand],
+    ["PH", phaserCommand],
     ["PL", planetsCommand],
     ["PO", pointsCommand],
     ["PR", promoteCommand],
@@ -96,8 +95,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     // ["TO", torpedoCommand],
     ["TR", tractorCommand],
     ["TY", typeCommand],
-    ["U", usersCommand],
-    // ["XGRID", xgridCommand]
+    ["U", usersCommand]
 ]);
 
 // --- Tokenization ---

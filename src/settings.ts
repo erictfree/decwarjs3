@@ -28,8 +28,8 @@ export const ENERGY_REPAIR_COST = 500;
 export const SHIELD_REPAIR_COST = 300;
 export const SHIELD_REPAIR_AMOUNT = 500;
 export const ENERGY_REPAIR_AMOUNT = 1000;
-
-
+export const DESTRUCTION_DAMAGE_THRESHOLD = 2500;
+export const PHASER_COOLDOWN = 1000;
 
 export type ScanSetting = "LONG" | "SHORT";
 export type PromptSetting = "NORMAL" | "INFORMATIVE";

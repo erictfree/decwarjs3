@@ -1,7 +1,9 @@
 import { GRID_WIDTH, GRID_HEIGHT, NUMBER_OF_PLANETS, Side, DEFAULT_BASE_ENERGY } from './settings.js';
-import { chebyshev, Position } from './coords.js';
+import { chebyshev, ocdefCoords, Position } from './coords.js';
 import { planets, bases } from './game.js';
 import { getRandom } from './util/random.js';
+import { getNearbyAlliedShips } from './ship.js';
+import { addPendingMessage } from './communication.js';
 
 export class Planet {
     public position: Position;
@@ -10,6 +12,7 @@ export class Planet {
     public isBase: boolean;
     public strength: number;   // base
     public name: string;
+    public hasCriedForHelp: boolean;
     //public captureProgress: { by: Side, progress: number, player: Player } | undefined;   // NOT CLEAR CHECK USAGE
 
     constructor(v: number, h: number) {
@@ -19,6 +22,7 @@ export class Planet {
         this.isBase = false;
         this.strength = 0;
         this.name = "unnamed planet";
+        this.hasCriedForHelp = false;
         //this.captureProgress = undefined;   // NOT CLEAR CHECK USAGE
     }
 
@@ -37,6 +41,17 @@ export class Planet {
             this.side = "NEUTRAL";
             this.strength = 0;
             baseArray.splice(baseArray.indexOf(this), 1);
+        }
+    }
+
+    callForHelp(v: number, h: number, side: Side): void {
+        const allies = getNearbyAlliedShips(v, h, side, 10);
+
+        for (const player of allies) {
+            if (!player.ship) continue;
+            let coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: v, h: h });
+            const message = `Starbase at ${coords} under attack! Assist immediately.`;
+            addPendingMessage(player, message);
         }
     }
 

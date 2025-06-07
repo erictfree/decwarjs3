@@ -253,7 +253,7 @@ export class Ship {
             : `${this.shieldsUp ? '+' : '-'}${strength}%`;
     }
 
-    computePercent(): number {
+    computeShieldPercent(): number {
         const percent = (this.level / MAX_SHIELD_ENERGY) * 100;
         return this.shieldsUp ? Math.round(percent) : -Math.round(percent);
     }
@@ -332,8 +332,6 @@ export class Ship {
         )?.ship;
         return ship || null;
     }
-
-
 }
 
 export function applyDeviceDamage(
@@ -359,4 +357,14 @@ export function applyDeviceDamage(
         const status = value >= 300 ? "destroyed" : "damaged";
         addPendingMessage(ship.player, `${device} ${status}`);
     }
+}
+
+export function getNearbyAlliedShips(v: number, h: number, side: string, range: number): Player[] {
+    return players.filter(p => {
+        if (!p.ship) return false;
+        if (p.ship.side !== side) return false;
+        if (!p.radioOn) return false;
+
+        return chebyshev(p.ship.position, { v: v, h: h }) <= range;
+    });
 }

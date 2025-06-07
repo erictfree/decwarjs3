@@ -43,3 +43,4 @@ export function shieldCommand(player: Player, command: Command): void {
         sendMessageToClient(player, "Unknown SHIELD command. Try UP, DOWN, or TRANSFER.");
     }
 }
+
