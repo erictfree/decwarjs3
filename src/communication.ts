@@ -71,7 +71,7 @@ export function sendMessageToOthersWithFormat(
     formatter: (recipient: Player) => string
 ): void {
     players.forEach((recipient) => {
-        if (recipient !== origin && recipient.alive) {
+        if (recipient !== origin && recipient.ship) {
             const msg = formatter(recipient);
             addPendingMessage(recipient, msg);
         }

@@ -27,7 +27,7 @@ export class Player {
     public ship: Ship | null;
     public gagList: Set<string>;
     public radioOn: boolean;
-    public alive: boolean;
+    //public alive: boolean;
     public history: string[];
     public historyIndex: number;
     public ready: boolean;
@@ -38,16 +38,12 @@ export class Player {
     public points: {
         damageToEnemies: number;
         enemiesDestroyed: number;
-        damageToRomulans: number;
-        romulansDestroyed: number;
+        damageToBases: number;
         planetsCaptured: number;
         basesBuilt: number;
+        damageToRomulans: number;
         starsDestroyed: number;
-        basesDestroyed: number;
         planetsDestroyed: number;
-        shipsDestroyed: number;
-        baseBuildPoints: number;
-        basesBuiltCount: number;
     };
     public settings: {
         scan: ScanSetting;
@@ -80,7 +76,7 @@ export class Player {
         this.ship = this.createShip();  // TODO PUT BACK TODO
         this.gagList = new Set();
         this.radioOn = false;
-        this.alive = false;
+        //this.alive = false;
         this.history = [];
         this.historyIndex = -1;
         this.ready = false;
@@ -91,16 +87,12 @@ export class Player {
         this.points = {
             damageToEnemies: 0,
             enemiesDestroyed: 0,
-            damageToRomulans: 0,
-            romulansDestroyed: 0,
+            damageToBases: 0,
             planetsCaptured: 0,
             basesBuilt: 0,
+            damageToRomulans: 0,
             starsDestroyed: 0,
-            basesDestroyed: 0,
             planetsDestroyed: 0,
-            shipsDestroyed: 0,
-            baseBuildPoints: 0,
-            basesBuiltCount: 0,
         };
         this.settings = {
             scan: "LONG",
@@ -272,8 +264,8 @@ export class Player {
 
     createShip(): Ship | null {
         const ship = new Ship(this);
-        ship.side = "NEUTRAL";
-        ship.name = "UNKNOWN";
+        ship.side = "FEDERATION";
+        ship.name = "LEXINGTON";
         const pos = findEmptyLocation();
         if (pos) {
             ship.position = pos;

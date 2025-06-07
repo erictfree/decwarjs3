@@ -10,6 +10,15 @@ export const MAX_BUILDS_PER_PLANET = 5;
 export const MAX_SHIP_ENERGY = 5000;
 export const MAX_SHIELD_ENERGY = 2500;
 export const MAX_TORPEDOES = 10;
+export const BASE_WARNING_DISTANCE = 4;
+export const PLANET_WARNING_DISTANCE = 2;
+export const BLACKHOLE_WARNING_DISTANCE = 1;
+export const DEFAULT_SCAN_RANGE = 10;
+export const DEFAULT_SRS_RANGE = 7;
+export const INITIAL_BASE_STRENGTH = 1000;
+export const CAPTURE_DELAY_MIN_MS = 1000;
+export const WARP_DELAY_MIN_MS = 2000;
+export const WARP_DELAY_RANGE = 2000; // So delay = 500–999ms
 
 export type ScanSetting = "LONG" | "SHORT";
 export type PromptSetting = "NORMAL" | "INFORMATIVE";
@@ -31,12 +40,6 @@ export const SYMBOL_PLANET_FED = "@F";
 export const SYMBOL_PLANET_EMP = "@E";
 export const SYMBOL_PLANET_UNKNOWN = "@?";
 
-export const BASE_WARNING_DISTANCE = 4;
-export const PLANET_WARNING_DISTANCE = 2;
-export const BLACKHOLE_WARNING_DISTANCE = 1;
-export const DEFAULT_SCAN_RANGE = 10;
-export const DEFAULT_SRS_RANGE = 7;
-export const INITIAL_BASE_STRENGTH = 1000;
 
 export type Side = "NEUTRAL" | "FEDERATION" | "EMPIRE" | "ROMULAN";
 

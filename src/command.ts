@@ -1,18 +1,18 @@
 import { Player } from './player.js';
 // import { promoteCommand } from './admin.js';
-// import { usersCommand } from './users.js';
+import { usersCommand } from './users.js';
 // import { sendMessageToClient } from './communication.js';
-// import { moveCommand } from './move.js';
+import { moveCommand } from './move.js';
 import { helpCommand } from './help.js';
 import { shieldCommand } from './shield.js';
 import { radioCommand } from './radio.js';
 import { planetsCommand } from './planets.js';
-// import { captureCommand } from './capture.js';
+import { captureCommand } from './capture.js';
 // import { buildCommand } from './build.js';
 // import { dockCommand } from './dock.js';
 import { shortRangeScanCommand } from './srs.js';
 import { statusCommand } from './status.js';
-// import { pointsCommand } from './points.js';
+import { pointsCommand } from './points.js';
 import { summaryCommand } from './summary.js';
 import { listCommand } from './list.js';
 import { basesCommand } from './bases.js';
@@ -64,7 +64,7 @@ export class Command {
 const decwarCommands = new Map<string, CommandHandler>([
     ["BA", basesCommand],
     // ["BU", buildCommand],
-    // ["CA", captureCommand],
+    ["CA", captureCommand],
     // ["CL", clearCommand],
     // ["DA", damagesCommand],
     // ["DO", dockCommand],
@@ -75,11 +75,11 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["?", helpCommand],
     // ["IM", impulseCommand],
     ["LI", listCommand],
-    // ["M", moveCommand],
+    ["M", moveCommand],
     ["NE", newsCommand],
     // ["PH", phaserCommand],
     ["PL", planetsCommand],
-    // ["PO", pointsCommand],
+    ["PO", pointsCommand],
     // ["PR", promoteCommand],
     ["Q", quitCommand],
     ["RA", radioCommand],
@@ -97,7 +97,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     // ["TO", torpedoCommand],
     ["TR", tractorCommand],
     ["TY", typeCommand],
-    // ["U", usersCommand],
+    ["U", usersCommand],
     // ["XGRID", xgridCommand]
 ]);
 

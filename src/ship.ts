@@ -324,7 +324,39 @@ export class Ship {
         return [...players].find(p => p.ship && p.ship.name === name);
     }
 
+    static findShipByPartialName(partialName: string): Ship | null {
+        if (!partialName) return null;
+        const name = partialName.toUpperCase();
+        const ship = players.find(
+            (player: Player) => player.ship && player.ship.name && player.ship.name.toUpperCase().startsWith(name)
+        )?.ship;
+        return ship || null;
+    }
+
 
 }
 
+export function applyDeviceDamage(
+    ship: Ship,
+    totalDamage = 150,
+    targetDevices?: DeviceName[]
+): void {
+    const devices = (targetDevices ?? Object.keys(ship.devices)) as DeviceName[];
 
+    const hits = 2 + Math.floor(Math.random() * 2); // 2 or 3 hits
+    const perDevice = Math.floor(totalDamage / hits);
+
+    const damageMap: Partial<Record<DeviceName, number>> = {};
+
+    for (let i = 0; i < hits; i++) {
+        const target = devices[Math.floor(Math.random() * devices.length)];
+        ship.devices[target] += perDevice;
+        damageMap[target] = (damageMap[target] ?? 0) + perDevice;
+    }
+
+    for (const device of Object.keys(damageMap) as DeviceName[]) {
+        const value = ship.devices[device];
+        const status = value >= 300 ? "destroyed" : "damaged";
+        addPendingMessage(ship.player, `${device} ${status}`);
+    }
+}

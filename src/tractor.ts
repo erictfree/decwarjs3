@@ -56,7 +56,7 @@ export function tractorCommand(player: Player, command: Command): void {
         return;
     }
 
-    if (!target || !target.alive) {
+    if (!target || !target.ship) {
         sendMessageToClient(player, `${targetName} is not active.`);
         return;
     }

@@ -33,7 +33,7 @@ export function tellCommand(player: Player, command: Command): void {
 
     const targetTokens = targetPart.trim().split(/\s+/).slice(1).map(t => t.toUpperCase());
     let targetDesc = targetTokens.join(" ");
-    let recipients = players.filter(p => p.alive);
+    let recipients = players.filter(p => p.ship);
 
     const keyword = targetTokens[0];
 

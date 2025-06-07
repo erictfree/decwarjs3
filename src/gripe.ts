@@ -13,7 +13,7 @@ export function gripeCommand(player: Player): void {
     }
     player.currentPrompt = "Enter gripe, end with ^Z\r\n";
     //sendMessageToClient(player, player.currentPrompt, true, false);
-    if (player.alive) {
+    if (player.ship) {
         swapBackholeForPlayer(player);
     }
     player.multiLine = true;
@@ -24,7 +24,7 @@ export function gripeCommand(player: Player): void {
             hour12: false
         });
         fs.appendFileSync('DECWAR.GRP', `${currentDateTime} ${stardate} ${pl.ship?.name || 'Unknown'}: ${resp}\r\n`);
-        if (limbo.includes(player) && player.alive) {
+        if (limbo.includes(player) && player.ship) {
             swapPlayerForBackhole(player);
         }
         sendMessageToClient(player, 'Your gripe has been noted.', true, true);
