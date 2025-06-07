@@ -24,6 +24,10 @@ export const DOCK_DELAY_MIN_MS = 2000;
 export const BUILD_DELAY_MIN_MS = 2000;
 export const BUILD_DELAY_RANGE = 2000;
 export const MAX_BASES_PER_TEAM = 10;
+export const ENERGY_REPAIR_COST = 500;
+export const SHIELD_REPAIR_COST = 300;
+export const SHIELD_REPAIR_AMOUNT = 500;
+export const ENERGY_REPAIR_AMOUNT = 1000;
 
 
 

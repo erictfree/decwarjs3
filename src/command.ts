@@ -21,7 +21,7 @@ import { setCommand } from './set.js';
 // import { phaserCommand } from './phaser.js';
 import { newsCommand } from './news.js';
 // import { torpedoCommand } from './torpedo.js';
-// import { repairCommand } from './repair.js';
+import { repairCommand } from './repair.js';
 import { scanCommand } from './scan.js';
 import { timeCommand } from './time.js';
 import { tractorCommand } from './tractor.js';
@@ -82,7 +82,7 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["PR", promoteCommand],
     ["Q", quitCommand],
     ["RA", radioCommand],
-    // ["RE", repairCommand],
+    ["RE", repairCommand],
     ["RS", restartCommand],
     ["SC", scanCommand],
     ["SE", setCommand],
