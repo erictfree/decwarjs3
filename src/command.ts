@@ -29,12 +29,12 @@ import { tractorCommand } from './tractor.js';
 // import { impulseCommand } from './move.js';
 // import { xgridCommand } from './grid.js';
 import { energyCommand } from './energy.js';
-// import { damagesCommand } from './damage.js';
+import { damagesCommand } from './damage.js';
 import { typeCommand } from './type.js';
 import { gripeCommand } from './gripe.js';
 import { quitCommand } from './quit.js';
 // import { restartCommand } from './restart.js';
-// import { clearCommand } from './util/clear.js';
+import { clearCommand } from './util/clear.js';
 import { sendMessageToClient } from './communication.js';
 
 
@@ -65,8 +65,8 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["BA", basesCommand],
     // ["BU", buildCommand],
     ["CA", captureCommand],
-    // ["CL", clearCommand],
-    // ["DA", damagesCommand],
+    ["CL", clearCommand],
+    ["DA", damagesCommand],
     // ["DO", dockCommand],
     // //["UD", defaultHandler],
     ["EN", energyCommand],
