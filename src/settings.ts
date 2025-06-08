@@ -74,6 +74,7 @@ export const SHIPNAMES: string[] = [...FEDERATION_SHIPS, ...EMPIRE_SHIPS];
 export const settings = {
     stardate: 0,
     generated: false,
+    winner: null as string | null,
     version: "0.3" + VERSION,
     date: "2025-06-06",
     allowRomulans: true,
