@@ -88,8 +88,7 @@ export function phaserCommand(player: Player, command: Command): void {
         }
         return;
     }
-
-    const { position: { v: targetV, h: targetH }, cursor, mode, error } =
+    const { position: { v: targetV, h: targetH } } =
         getCoordsFromCommandArgs(player, args, player.ship.position.v, player.ship.position.h, true);
 
     const distance = chebyshev(player.ship.position, { v: targetV, h: targetH });
@@ -308,7 +307,7 @@ export function applyPhaserShipDamage(source: Player | Planet, target: Player, d
     // Get signed shield percentage (e.g. +83 or -72)
     const targetShieldPct = target.ship.computeShieldPercent();
 
-    let sourceName: string =
+    const sourceName: string =
         source instanceof Player && source.ship
             ? source.ship.name
             : source instanceof Planet
@@ -322,7 +321,6 @@ export function applyPhaserShipDamage(source: Player | Planet, target: Player, d
             target: target.ship.name ?? "Unknown",
             damage,
             attackerPos: sourcePos,
-            targetPos,
             targetShieldPercent: targetShieldPct,
             outputLevel: source.settings.output
         });
@@ -335,7 +333,6 @@ export function applyPhaserShipDamage(source: Player | Planet, target: Player, d
         target: target.ship.name ?? "Unknown",
         damage,
         attackerPos: sourcePos,
-        targetPos,
         targetShieldPercent: targetShieldPct,
         outputLevel: target.settings.output
     });
@@ -382,7 +379,6 @@ export function formatPhaserHit({
     target,
     damage,
     attackerPos,
-    targetPos,
     targetShieldPercent,
     outputLevel
 }: {
@@ -390,7 +386,6 @@ export function formatPhaserHit({
     target: string;
     damage: number;
     attackerPos: { v: number, h: number };
-    targetPos: { v: number, h: number };
     targetShieldPercent: number;
     outputLevel: OutputSetting;
 }): string {
@@ -456,13 +451,11 @@ export function sendFormattedMessageToObservers({
     target: string;
     damage: number;
     targetShieldPercent: number;
-    // eslint-disable-next-line no-unused-vars
     formatFunc: (opts: {
         attacker: string;
         target: string;
         damage: number;
         attackerPos: { v: number; h: number };
-        targetPos: { v: number; h: number };
         targetShieldPercent: number;
         outputLevel: OutputSetting;
     }) => string;
@@ -478,7 +471,6 @@ export function sendFormattedMessageToObservers({
             target,
             damage,
             attackerPos: origin,
-            targetPos: origin, // assuming for simplicity; can split if needed
             targetShieldPercent,
             outputLevel: other.settings.output
         });

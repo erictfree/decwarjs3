@@ -173,11 +173,11 @@ export function ocdefCoords(
 
 // Bresenham line generator
 export function* bresenhamLine(v0: number, h0: number, v1: number, h1: number) {
-    let dh = Math.abs(h1 - h0),
+    const dh = Math.abs(h1 - h0),
         dv = Math.abs(v1 - v0),
         sh = h0 < h1 ? 1 : -1,
-        sv = v0 < v1 ? 1 : -1,
-        err = dh - dv;
+        sv = v0 < v1 ? 1 : -1;
+    let err = dh - dv;
 
     while (true) {
         yield { h: h0, v: v0 };

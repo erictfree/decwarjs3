@@ -1,5 +1,5 @@
 //import { playerCache } from '../game.js';
-import { Player } from '../player.js';
+//import { Player } from '../player.js';
 // Auth session interface for player authentication
 
 export interface AuthSession {
@@ -23,20 +23,20 @@ export function isValidEmail(email: string): boolean {
     return emailRegex.test(trimmed);
 }
 
-export function emailHasSameIp(email: string, ip: string): Player | null {
-    return null; // TODO PUT BACK TODO
-    // const matchingPlayer = playerCache.find(p =>
-    //     p.auth.ip === ip &&
-    //     p.auth.email?.toLowerCase() === email.toLowerCase()
-    // );
+// export function emailHasSameIp(email: string, ip: string): Player | null {
+//     return null; // TODO PUT BACK TODO
+//     // const matchingPlayer = playerCache.find(p =>
+//     //     p.auth.ip === ip &&
+//     //     p.auth.email?.toLowerCase() === email.toLowerCase()
+//     // );
 
-    // if (matchingPlayer) {
-    //     const idx = playerCache.indexOf(matchingPlayer);
-    //     playerCache.splice(idx, 1);
-    //     return matchingPlayer;
-    // }
-    // return null;
-}
+//     // if (matchingPlayer) {
+//     //     const idx = playerCache.indexOf(matchingPlayer);
+//     //     playerCache.splice(idx, 1);
+//     //     return matchingPlayer;
+//     // }
+//     // return null;
+// }
 
 
 // Export an empty object to ensure the file is treated as a module

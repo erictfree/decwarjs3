@@ -38,9 +38,10 @@ export async function sendEmailToMailchimp(email: string): Promise<AddEmailResul
 
         console.warn("Unexpected Mailchimp response format:", response);
         return null;
-    } catch (error: any) {
-        const status = error?.response?.status;
-        const detail = error?.response?.body?.detail || error.message;
+    } catch (error: unknown) {
+        const status = (error as { response?: { status?: unknown } })?.response?.status;
+        const detail = (error as { response?: { body?: { detail?: string } }; message?: string })?.response?.body?.detail ||
+            (error as { message?: string })?.message;
 
         console.error("Mailchimp API error:", {
             status,

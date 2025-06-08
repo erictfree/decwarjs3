@@ -20,7 +20,7 @@ import {
     settings
 } from './settings.js';
 import { Ship } from './ship.js';
-import { generateAccessCode, isValidEmail, emailHasSameIp } from './util/auth.js';
+import { generateAccessCode, isValidEmail } from './util/auth.js';
 import { sendEmail } from './util/send-email.js';
 import { addEmailToMailchimp } from './util/email.js';
 import { setRandomSeed, galaxySeed } from './util/random.js';
@@ -79,10 +79,10 @@ export function parseAndExecutePGCommand(player: Player, input: string): void {
                 }
             }
         }
-    } catch (error: any) {
+    } catch (error: unknown) {
         sendMessageToClient(
             player,
-            `Error parsing pre-game command: ${error.message || error}`
+            `Error parsing pre-game command: ${error instanceof Error ? error.message : String(error)}`
         );
     }
 }
@@ -212,7 +212,7 @@ export function promptForSeed(player: Player, iter: number): void {
 }
 
 export function promptForLevel(player: Player, iter: number): void {
-    if (false) {//} && getPlayerSettings(player)) {
+    if (false) {//} && getPlayerSettings(player)) {  //TODO
         chooseSide(player);
         return;
     }
@@ -320,7 +320,7 @@ function promptForSide(player: Player, iter: number): void {
 }
 
 export function promptForShip(player: Player, iter: number): void {
-    let side = player.ship?.side ?? "NEUTRAL";
+    const side = player.ship?.side ?? "NEUTRAL";
     if (side == "NEUTRAL") return;
 
     if (iter > 4) {

@@ -1,7 +1,6 @@
 // DECWAR-style TRACTOR (TR) command implementation
 import { Player } from './player.js';
 import { Command } from './command.js';
-import { players } from './game.js';
 import { addPendingMessage, sendMessageToClient, sendOutputMessage } from './communication.js';
 import { SHIPNAMES } from './settings.js';
 import { Ship } from './ship.js';

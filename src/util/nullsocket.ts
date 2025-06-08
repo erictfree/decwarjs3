@@ -8,14 +8,14 @@ export class NullSocket extends Socket {
         this.pause(); // ensure it doesn't try to read
     }
 
-    override write(_data: any, _encoding?: any, _callback?: any): boolean {
+    override write(_data: unknown, _encoding?: unknown, _callback?: unknown): boolean {
         void _data;
         void _encoding;
         void _callback;
         return true;
     }
 
-    override end(_data?: any, _encoding?: any, _callback?: any): this {
+    override end(_data?: unknown, _encoding?: unknown, _callback?: unknown): this {
         void _data;
         void _encoding;
         void _callback;

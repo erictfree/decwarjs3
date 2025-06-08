@@ -2,7 +2,7 @@ import { addPendingMessage, sendMessageToClient, sendOutputMessage } from './com
 import { isInBounds, Position, findEmptyLocation, chebyshev, findObjectAtPosition, ocdefCoords, isAdjacent } from './coords.js';
 import { SHIPNAMES, Side, Condition, MAX_TORPEDOES, MAX_SHIP_ENERGY, MAX_SHIELD_ENERGY } from './settings.js';
 import { Player } from './player.js';
-import { players, bases, planets } from './game.js';
+import { players, planets } from './game.js';
 import { Planet } from './planet.js';
 
 
@@ -391,7 +391,7 @@ export function attemptDisplaceFromImpact(attacker: Player, target: Player): voi
     // Displace the ship
     target.ship.position = { v: newV, h: newH };
 
-    let coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, { v: newV, h: newH });
+    const coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, { v: newV, h: newH });
     addPendingMessage(target, `You were displaced to ${coords} by the torpedo impact.`);
     sendMessageToClient(attacker, `${target.ship.name} was knocked to ${newV}-${newH}.`);
 }
@@ -403,13 +403,6 @@ export function getAdjacentFriendlyPlanets(ship: Ship): Planet[] {
     const team = ship.side;
 
     const adjacent: Planet[] = [];
-
-    let friendlyBases: Planet[] = [];
-    if (team === "FEDERATION") {
-        friendlyBases = bases.federation;
-    } else {
-        friendlyBases = bases.empire;
-    }
 
     for (const planet of planets) {
         if (

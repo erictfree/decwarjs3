@@ -90,7 +90,6 @@ export function captureCommand(player: Player, command: Command, done?: () => vo
     const timer = setTimeout(() => {
         releaseClient(player);
 
-        const buildLevel = planet.builds;
         //const phaserDamage = 50 + (30 * buildLevel);
         // applyPhaserShipDamage(player, { x: planet.position.x, y: planet.position.y, side: planet.side }, phaserDamage);
         //TODO: add this back in

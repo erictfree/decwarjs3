@@ -24,7 +24,6 @@ const ATTACK_CHANCE = 1 / 3;
 let romulanCounter = 0;
 export let romulan: Player | null = null;
 
-/* eslint-disable no-unused-vars */
 enum RomulanState {
     IDLE,
     SPEAK,
@@ -99,7 +98,7 @@ export function updateRomulan(): void {
             }
             break;
 
-        case RomulanState.MOVE:
+        case RomulanState.MOVE: {
             if (!romulanTarget) {
                 romulanState = RomulanState.END;
                 break;
@@ -123,6 +122,7 @@ export function updateRomulan(): void {
             romulanState = RomulanState.DECLOAK;
             romulan.ship.romulanStatus.cloaked = false;
             break;
+        }
 
         case RomulanState.DECLOAK:
             romulanState = RomulanState.PREATTACK;
@@ -132,7 +132,7 @@ export function updateRomulan(): void {
             romulanState = RomulanState.ATTACK;
             break;
 
-        case RomulanState.ATTACK:
+        case RomulanState.ATTACK: {
             if (!romulanTarget) {
                 romulanState = RomulanState.END;
                 break;
@@ -200,6 +200,7 @@ export function updateRomulan(): void {
 
             romulanState = RomulanState.REPAIR;
             break;
+        }
 
         case RomulanState.REPAIR:
             romulan.ship.romulanStatus.cloaked = true;

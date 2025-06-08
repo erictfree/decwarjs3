@@ -100,7 +100,7 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
         multiplier = 3;
     }
 
-    let energyCost = warp * warp * multiplier;
+    const energyCost = warp * warp * multiplier;
 
     if (ship.energy < energyCost) {
         sendOutputMessage(player, {
@@ -118,7 +118,7 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
     }
 
     // —— Collision Detection ——  
-    let destination = { v: targetVInput, h: targetHInput };
+    const destination = { v: targetVInput, h: targetHInput };
     let prevPoint = { v: startV, h: startH };
     let collisionDetected = false;
 
@@ -136,7 +136,7 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
         prevPoint = pt;
     }
 
-    let originalEnergy = ship.energy;
+    const originalEnergy = ship.energy;
     ship.energy -= energyCost;
     //updateShipCondition(player);  TODO    
 
@@ -289,7 +289,7 @@ export function impulseCommand(player: Player, command: Command, done?: () => vo
             return;
         }
 
-        let coords = ocdefCoords(player.settings.ocdef, ship.position, destination);
+        const coords = ocdefCoords(player.settings.ocdef, ship.position, destination);
         ship.position = destination;
         sendMessageToClient(player, `IMPULSE complete to sector ${coords}`);
 
@@ -324,7 +324,7 @@ function tractorShip(ship: Ship): void {
         disconnectTractor(ship);
     } else {
         ship.tractorPartner.position = trailingPosition;
-        let coords = ocdefCoords(ship.tractorPartner.player.settings.ocdef, ship.tractorPartner.position, trailingPosition);
+        const coords = ocdefCoords(ship.tractorPartner.player.settings.ocdef, ship.tractorPartner.position, trailingPosition);
         sendMessageToClient(ship.tractorPartner.player, `${ship.name} has moved to ${coords}.`);
         addPendingMessage(ship.tractorPartner.player, `You were tractored to @${trailingPosition.v}-${trailingPosition.h}}.`);
     }

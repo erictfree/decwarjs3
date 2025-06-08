@@ -60,7 +60,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         return;
     }
 
-    let outputMode: OutputSetting = player.settings.output ?? "LONG";
+    const outputMode: OutputSetting = player.settings.output ?? "LONG";
 
     for (const clause of result.clauses) {
         if (clause.objectFilters.length == 0) {
@@ -180,15 +180,15 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
             );
         }
 
-        let summarize = clause.modes.includes("SUMMARY");
+        const summarize = clause.modes.includes("SUMMARY");
 
         // Show full object listings (as in 2.2 LIST default)
-        let finalShips = [];
-        let finalBases = [];
-        let finalPlanets = [];
+        const finalShips = [];
+        const finalBases = [];
+        const finalPlanets = [];
         let needReturn = false;
 
-        let qualifier = explicitRange ? "in specified range" : "in game";
+        const qualifier = explicitRange ? "in specified range" : "in game";
 
         for (const ship of allShips) {
             const line = formatShipLine(ship, outputMode, player);
@@ -207,7 +207,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         if (summarize) {
-            let shipSummary: ListSummary = summarizeShips(finalShips);
+            const shipSummary: ListSummary = summarizeShips(finalShips);
             printSummary(shipSummary, "ships", qualifier, outputLines);
             if (finalShips.length > 0) needReturn = true;
         }
@@ -234,7 +234,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         if (summarize) {
-            let baseSummary: ListSummary = summarizeBases(finalBases);
+            const baseSummary: ListSummary = summarizeBases(finalBases);
             printSummary(baseSummary, "bases", qualifier, outputLines);
             if (finalBases.length > 0) needReturn = true;
         }
@@ -262,7 +262,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         if (summarize) {
-            let planetSummary: ListSummary = summarizePlanets(finalPlanets);
+            const planetSummary: ListSummary = summarizePlanets(finalPlanets);
             printSummary(planetSummary, "planets", qualifier, outputLines);
             if (finalPlanets.length > 0) needReturn = true;
         }
@@ -293,7 +293,7 @@ function formatShipLine(ship: Ship, mode: OutputSetting, viewer: Player): string
     }
 
     let isOutOfRange = false;
-    let distance = chebyshev(ship.position, viewer.ship.position);
+    const distance = chebyshev(ship.position, viewer.ship.position);
 
     if (distance > DEFAULT_SCAN_RANGE && ship.side !== viewer.ship.side) isOutOfRange = true;
     //const { v, h } = ship.position;
@@ -303,7 +303,7 @@ function formatShipLine(ship: Ship, mode: OutputSetting, viewer: Player): string
     const name = ship.name ?? '??';
     let fullName = (name[0].toUpperCase() + name.slice(1).toLowerCase()).padEnd(12);
     let percent = "%";
-    let shieldPct = (ship.level / MAX_SHIELD_ENERGY) * 100;
+    const shieldPct = (ship.level / MAX_SHIELD_ENERGY) * 100;
     let shieldDisplay = `+${shieldPct.toFixed(0)}${percent}`.padStart(7);
 
 
@@ -334,7 +334,7 @@ function formatBaseLine(base: Planet, mode: OutputSetting, viewer: Player): stri
     if (!viewer.ship) {
         return null;
     }
-    let distance = chebyshev(viewer.ship.position, viewer.ship.position);
+    const distance = chebyshev(viewer.ship.position, viewer.ship.position);
     if (distance > DEFAULT_SCAN_RANGE && base.side !== viewer.ship.side) {
         const memory = viewer.ship.side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
         if (!memory.has(`${base.position.v},${base.position.h}`)) {
@@ -356,7 +356,7 @@ function formatBaseLine(base: Planet, mode: OutputSetting, viewer: Player): stri
         percent = "%";
     }
 
-    let coord = `${formatCoordsForPlayer2(base.position.v, base.position.h, viewer)}`;
+    const coord = `${formatCoordsForPlayer2(base.position.v, base.position.h, viewer)}`;
     //const delta = `${dx >= 0 ? "+" : ""}${dx},${dy >= 0 ? "+" : ""}${dy}`.padStart(9);
     const shieldPct = (base.strength / INITIAL_BASE_STRENGTH) * 100;
     let shieldDisplay = `+${shieldPct.toFixed(1)}${percent}`.padStart(9);
@@ -372,7 +372,7 @@ function formatPlanetLine(planet: Planet, mode: OutputSetting, viewer: Player): 
     if (!viewer.ship) {
         return null;
     }
-    let distance = chebyshev(planet.position, viewer.ship.position);
+    const distance = chebyshev(planet.position, viewer.ship.position);
     if (distance > DEFAULT_SCAN_RANGE) {
         const memory = viewer.ship.side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
         if (!memory.has(`${planet.position.v},${planet.position.h}`)) {
@@ -395,8 +395,7 @@ function formatPlanetLine(planet: Planet, mode: OutputSetting, viewer: Player): 
     let coord = `${formatCoordsForPlayer2(planet.position.v, planet.position.h, viewer)}`
     if (mode === "SHORT" || mode === "MEDIUM") {
         fullName = "@";
-        const pad = true ? 6 : 2;
-        builds = (planet.builds + "").padStart(pad);
+        builds = (planet.builds + "").padStart(6);
         if (planet.builds == 0) builds = "";
         return ` ${flag}${fullName} ${coord}${builds}`;
     } else {
@@ -448,8 +447,8 @@ export function parseListCommand(input: string): ParseResult {
 
         clauses.push(current);
         return { ok: true, clauses };
-    } catch (e: any) {
-        return { ok: false, error: e.message || "Unexpected parsing error" };
+    } catch (e: unknown) {
+        return { ok: false, error: e instanceof Error ? e.message : "Unexpected parsing error" };
     }
 }
 
@@ -525,7 +524,7 @@ export function formatCoordsForPlayer2(
     if (!player.ship) {
         return "";
     }
-    let abs = `${targetV.toString().padStart(2, ' ')}-${targetH.toString().padStart(2, ' ')}`;
+    const abs = `${targetV.toString().padStart(2, ' ')}-${targetH.toString().padStart(2, ' ')}`;
     const relV = targetV - player.ship.position.v;
     const relH = targetH - player.ship.position.h;
 

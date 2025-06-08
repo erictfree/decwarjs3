@@ -1,13 +1,10 @@
 import { Command } from "./command.js";
 import { Player } from "./player.js";
-import { SHIPNAMES } from "./settings.js";
-import { players } from "./game.js";
-import { addPendingMessage, sendMessageToClient, } from "./communication.js";
+import { sendMessageToClient, } from "./communication.js";
 
 export function radioCommand(player: Player, command: Command): void {
     const args = command.args;
     const action = args[0]?.toUpperCase();
-    const rest = args.slice(1).join(" ").trim();
 
     if (!player.ship) {
         sendMessageToClient(player, "You must be in a ship to use RADIO.");

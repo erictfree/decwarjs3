@@ -49,7 +49,7 @@ export class Planet {
 
         for (const player of allies) {
             if (!player.ship) continue;
-            let coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: v, h: h });
+            const coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: v, h: h });
             const message = `Starbase at ${coords} under attack! Assist immediately.`;
             addPendingMessage(player, message);
         }

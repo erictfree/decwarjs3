@@ -11,18 +11,17 @@ import net from "net";
 import { chebyshev } from "./coords.js";
 import { applyPhaserShipDamage } from "./phaser.js";
 
-
-export let players: Player[] = [];
-export let limbo: Player[] = [];
+export const players: Player[] = [];
+export const limbo: Player[] = [];
 export let planets: Planet[] = [];
 export const bases = {
     federation: [] as Planet[],
     empire: [] as Planet[],
 };
-export let stars: Star[] = [];
-export let blackholes: Blackhole[] = [];
-export let stardate: number = 0;
-export let pointsManager: PointsManager = new PointsManager();
+export const stars: Star[] = [];
+export const blackholes: Blackhole[] = [];
+export const stardate: number = 0;
+export const pointsManager: PointsManager = new PointsManager();
 
 export function generateGalaxy(seed?: string): void {
     if (!seed) {
@@ -46,9 +45,10 @@ function updateGameTick(): void {
         console.log(settings.timeConsumingMoves, players.length, ticked);
 
     checkForDisconnectedPlayers();
-    for (const player of players) {
-        //player.updateLifeSupport(); //TODO
-    }
+
+    // for (const player of players) {
+    //     //player.updateLifeSupport(); //TODO
+    // }
 
     if (ticked) {
         updateRomulan();
@@ -62,7 +62,7 @@ function updateGameTick(): void {
     }
 
     //checkForNova();
-    checkForBlackHoles();
+    checkForBlackholes();
     //checkForInactivity();
     checkVictoryConditions();
     setTimeout(updateGameTick, 1000);
@@ -193,7 +193,7 @@ export function performBaseAttacks(): void {
     }
 }
 
-export function checkForBlackHoles(): void {
+export function checkForBlackholes(): void {
     for (const player of players) {
         const ship = player.ship;
         if (!ship) continue;

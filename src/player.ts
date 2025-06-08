@@ -6,13 +6,13 @@ import { Side, ScanSetting, PromptSetting, OCDEF, ICDEF, OutputSetting } from '.
 import { AuthSession } from './util/auth.js';
 import { findEmptyLocation } from './coords.js';
 
-const suffocationMessages = [
-    "Life support failed. Your crew drew their final breaths and fell silent.",
-    "Oxygen tanks empty. The ship now drifts, silent and lifeless.",
-    "You hear one final gasp... then only the hum of dead systems remains.",
-    "Without life support, the crew could not survive. All hands lost.",
-    "No air. No hope. Just a hulk in space, and the echo of a failed mission."
-];
+// const suffocationMessages = [
+//     "Life support failed. Your crew drew their final breaths and fell silent.",
+//     "Oxygen tanks empty. The ship now drifts, silent and lifeless.",
+//     "You hear one final gasp... then only the hum of dead systems remains.",
+//     "Without life support, the crew could not survive. All hands lost.",
+//     "No air. No hope. Just a hulk in space, and the echo of a failed mission."
+// ];
 
 export class Player {
     public auth: AuthSession;
@@ -54,7 +54,7 @@ export class Player {
         name: string | null;
     }
     public currentPrompt?: string;
-    // eslint-disable-next-line no-unused-vars
+
     public callBack?: (who: Player, resp: string) => void;
 
     constructor(socket: Socket) {

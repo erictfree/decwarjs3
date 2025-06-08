@@ -11,7 +11,7 @@ import {
 import { addPlanetToMemory } from './memory.js';
 import { Command } from './command.js';
 import { Planet } from './planet.js';
-import { planets, players, bases, stars, blackholes } from './game.js';
+import { planets, players, stars, blackholes } from './game.js';
 import { matchesPattern } from './util/util.js';
 
 export function scanCommand(player: Player, command: Command): void {

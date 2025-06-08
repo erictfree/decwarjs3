@@ -2,7 +2,6 @@ import { Command } from "./command.js";
 import { Player } from "./player.js";
 import { sendMessageToClient } from "./communication.js";
 import { matchesPattern } from "./util/util.js";
-import { Ship } from "./ship.js";
 
 export function shieldCommand(player: Player, command: Command): void {
     const action = command.args[0]?.toUpperCase();

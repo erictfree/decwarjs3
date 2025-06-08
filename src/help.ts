@@ -4,9 +4,9 @@ import { Player } from "./player.js";
 import fs from 'fs';
 import path from 'path';
 
-let helpData = loadHelpData();
-let helpCommands = getHelpCommands();
-let pgCommands = ['CTl-c', 'INTRO', 'HInts', 'INput', 'Output', 'PAuses', 'PRegame'];
+const helpData = loadHelpData();
+const helpCommands = getHelpCommands();
+const pgCommands = ['CTl-c', 'INTRO', 'HInts', 'INput', 'Output', 'PAuses', 'PRegame'];
 
 export function helpCommand(player: Player, command: Command): void {
 

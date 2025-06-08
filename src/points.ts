@@ -1,5 +1,4 @@
 import { Command } from "./command.js";
-import { players } from "./game.js";
 import { sendMessageToClient } from "./communication.js";
 import { matchesPattern } from "./util/util.js";
 import { Player } from './player.js';
@@ -20,7 +19,7 @@ export function pointsCommand(player: Player, command: Command): void {
     return;
   }
 
-  let keywords = [];
+  const keywords = [];
   const filters = ["Me", "I", "Federation", "Human", "Empire", "Klingon", "Romulan", "All"];
 
   for (const arg of command.args) {
@@ -71,7 +70,7 @@ export function pointsCommand(player: Player, command: Command): void {
     //TODO
   }
 
-  let output = formatScores(scores);
+  const output = formatScores(scores);
   sendMessageToClient(player, output);
 }
 
@@ -221,10 +220,11 @@ function formatScores(scores: Score[]): string {
             score.stardates ? activeHeaders.reduce((sum, h) => sum + score.points[h.key], 0) / score.stardates : 0
           );
           break;
-        default:
+        default: {
           const pointHeader = activeHeaders.find(h => h.label === header);
           value = pointHeader ? formatNum(score.points[pointHeader.key]) : "0.0".padStart(6);
           break;
+        }
       }
       result += value.padStart(colWidth);
     }

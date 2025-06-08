@@ -47,8 +47,8 @@ export function sendMessageToClient(
         if (returns) player.socket.write(`${message}\r\n`);
         else player.socket.write(`${message}`);
         if (command && !player.isOnHold) player.socket.write(`${player.getPrompt()}${player.inputBuffer}`);
-    } catch (err: any) {
-        console.error('Error in sendMessageToClient:', err.message);
+    } catch (err: unknown) {
+        console.error('Error in sendMessageToClient:', err instanceof Error ? err.message : String(err));
     }
 }
 
@@ -67,7 +67,6 @@ export function sendMessageToOthers(player: Player, message: string, range: numb
 
 export function sendMessageToOthersWithFormat(
     origin: Player,
-    // eslint-disable-next-line no-unused-vars
     formatter: (recipient: Player) => string
 ): void {
     players.forEach((recipient) => {
@@ -95,8 +94,8 @@ export function sendOutputMessage(player: Player, variants: OutputVariants): voi
 //             if (returns) socket.write(`${message}\r\n`);
 //             else socket.write(`${message}`);
 //             if (command) socket.write(` ${clientState.inputBuffer}`);
-//         } catch (err: any) {
-//             console.error('Error in safeBroadcastMessage:', err.message);
+//         } catch (err: unknown) {
+//             console.error('Error in safeBroadcastMessage:', err instanceof Error ? err.message : String(err));
 //         }
 //     }
 // }

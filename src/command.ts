@@ -42,7 +42,6 @@ interface TokenizedInput {
 
 // --- Command Class ---
 
-// eslint-disable-next-line no-unused-vars
 export type CommandHandler = (player: Player, command: Command, done?: () => void) => void;
 
 export class Command {

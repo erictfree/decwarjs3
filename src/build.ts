@@ -37,7 +37,7 @@ export function buildCommand(player: Player, command: Command, done?: () => void
     const planet = planets.find(p => p.position.h === targetH && p.position.v === targetV);
 
     if (!planet) {
-        let coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: targetV, h: targetH });
+        const coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: targetV, h: targetH });
         sendMessageToClient(player, `No known planet at ${coords}. BUILD aborted.`);
         done?.();
         return;
@@ -80,7 +80,7 @@ export function buildCommand(player: Player, command: Command, done?: () => void
 
             planet.makeBase(player.ship.side);
 
-            let coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: targetV, h: targetH });
+            const coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: targetV, h: targetH });
 
             sendOutputMessage(player, {
                 SHORT: `Base created.`,
@@ -89,7 +89,7 @@ export function buildCommand(player: Player, command: Command, done?: () => void
             });
         }
         else {
-            let coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: targetV, h: targetH });
+            const coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: targetV, h: targetH });
 
             sendOutputMessage(player, {
                 SHORT: `+1 build.`,
