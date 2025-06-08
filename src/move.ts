@@ -169,7 +169,6 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
     //starbasePhaserDefense(player); TODO
 }
 
-
 function maybeDamageFromWarp(ship: Ship, warpDistance: number): void {
     if (warpDistance <= 4) return;
 
@@ -223,6 +222,17 @@ export function impulseCommand(player: Player, command: Command, done?: () => vo
     }
 
     const destination = { v: targetVInput, h: targetHInput };
+
+    // DECWAR: only cardinal directions allowed
+    if (!isInBounds(targetVInput, targetHInput)) {
+        sendOutputMessage(player, {
+            SHORT: "IMP > RANGE",
+            MEDIUM: "Not in bounds.",
+            LONG: "IMPULSE move must be to a sector within the grid."
+        });
+        done?.();
+        return;
+    }
 
     // DECWAR: only cardinal directions allowed
     if (!isAdjacent(ship.position, destination)) {

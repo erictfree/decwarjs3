@@ -34,6 +34,7 @@ import { quitCommand } from './quit.js';
 import { restartCommand } from './util/restart.js';
 import { clearCommand } from './util/clear.js';
 import { sendMessageToClient } from './communication.js';
+import { oveCommand } from './ove.js';
 
 
 interface TokenizedInput {
@@ -94,7 +95,8 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["TO", torpedoCommand],
     ["TR", tractorCommand],
     ["TY", typeCommand],
-    ["U", usersCommand]
+    ["U", usersCommand],
+    ["O", oveCommand]
 ]);
 
 // --- Tokenization ---

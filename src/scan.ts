@@ -171,12 +171,16 @@ export function scan(player: Player, command: Command, range: number = DEFAULT_S
 // Identify sectors that should show warnings
 function getWarningSectors(player: Player): Set<string> {
     const warningSet = new Set<string>();
-    const side = player.ship?.side ?? "NEUTRAL";  // SHOULDN'T HAPPEN
+    if (!player.ship) return warningSet;
+
+    const side = player.ship.side;  // SHOULDN'T HAPPEN
 
     let warningDistance = PLANET_WARNING_DISTANCE;
     for (const planet of planets) {
         if (planet.isBase) {
             warningDistance = BASE_WARNING_DISTANCE;
+        } else {
+            warningDistance = PLANET_WARNING_DISTANCE;
         }
         if (planet.side !== side || planet.side === "NEUTRAL") {   // neutral is via Harris info
             for (let dh = -warningDistance; dh <= warningDistance; dh++) {

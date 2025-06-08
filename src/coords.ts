@@ -244,5 +244,5 @@ function getAdjacentPositions(pos: Position): Position[] {
 }
 
 export function isInBounds(v: number, h: number): boolean {
-    return h >= 1 && h < GRID_WIDTH && v >= 1 && v < GRID_HEIGHT;
+    return h >= 1 && h <= GRID_WIDTH && v >= 1 && v <= GRID_HEIGHT;
 }
