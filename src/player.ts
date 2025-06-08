@@ -2,7 +2,7 @@ import { Socket } from 'net';
 import { Ship } from './ship.js';
 import { sendMessageToClient } from './communication.js';
 import { players } from './game.js';
-import { Side, ScanSetting, PromptSetting, OCDEF, ICDEF, OutputSetting } from './settings.js';
+import { Side, ScanSetting, PromptSetting, OCDEF, ICDEF, OutputSetting, MAX_SHIELD_ENERGY } from './settings.js';
 import { AuthSession } from './util/auth.js';
 import { findEmptyLocation } from './coords.js';
 
@@ -128,7 +128,7 @@ export class Player {
         const ship = this.ship;
 
         // S: shields down or <10%
-        if (ship.shieldsUp) {
+        if (!ship.shieldsUp || ship.level < 0.1 * MAX_SHIELD_ENERGY) {
             flags.push('S');
         }
 
