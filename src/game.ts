@@ -4,6 +4,7 @@ import { Player } from "./player.js";
 import { Star } from "./star.js";
 import { setRandomSeed } from './util/random.js';
 import { PointsManager } from "./points.js";
+import { settings } from "./settings.js";
 
 export let players: Player[] = [];
 export let limbo: Player[] = [];
@@ -27,6 +28,5 @@ export function generateGalaxy(seed?: string): void {
     Planet.generateBases();
     Blackhole.generate();
     Star.generate();
-    //generated = true;
-    console.log(stars);
+    settings.generated = true;
 }

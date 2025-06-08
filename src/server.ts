@@ -6,6 +6,7 @@ import { players, limbo } from './game.js';
 import { queueCommands } from './command.js';
 import { MAX_PLAYERS } from './settings.js';
 import { swapPlayerForBackhole } from './gripe.js';
+import { parseAndExecutePGCommand } from './pregame.js';
 
 config();
 
@@ -35,7 +36,7 @@ const server = net.createServer((socket) => {
 
   const player = new Player(socket);
   clients.set(socket, player);
-  players.push(player);
+  //players.push(player);
 
   // Negotiate raw mode: suppress line mode and client-side echo
   socket.write(Buffer.from([IAC, WILL, SUPPRESS_GO_AHEAD]));
@@ -156,7 +157,7 @@ const server = net.createServer((socket) => {
             queueCommands(player, line);
             //parseAndExecuteCommand(player, line);
           } else {
-            //parseAndExecutePGCommand(player, line);   TEMP PUT BACK TODO
+            parseAndExecutePGCommand(player, line);
           }
         }
         continue;

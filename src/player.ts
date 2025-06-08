@@ -264,8 +264,8 @@ export class Player {
 
     createShip(): Ship | null {
         const ship = new Ship(this);
-        ship.side = "FEDERATION";
-        ship.name = "LEXINGTON";
+        ship.side = "NEUTRAL";
+        ship.name = "NEUTRAL";
         const pos = findEmptyLocation();
         if (pos) {
             ship.position = pos;
