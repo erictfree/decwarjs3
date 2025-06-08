@@ -53,9 +53,8 @@ function updateGameTick(): void {
     if (ticked) {
         updateRomulan();
         maybeSpawnRomulan();
-        performPlanetAttacks();
-        performBaseAttacks();
-
+        performPlanetOrBaseAttacks(false);
+        performPlanetOrBaseAttacks(true);
         //energyRegeneration();
         //repairAllPlayerDevices();
         //repairAllBases();
@@ -64,7 +63,7 @@ function updateGameTick(): void {
     //checkForNova();
     checkForBlackholes();
     //checkForInactivity();
-    checkVictoryConditions();
+    checkEndGame();  // just went planet/bases destroyed? TODO
     setTimeout(updateGameTick, 1000);
 }
 updateGameTick();
@@ -76,6 +75,37 @@ function nextTick(): boolean {
         return true;
     }
     return false;
+}
+
+export function performPlanetOrBaseAttacks(base: boolean = false): void {
+    const numPlayers = players.length;
+    for (const planet of planets) {
+        if (planet.isBase) continue;
+        if (Math.random() < 0.5) continue;
+        const builds = planet.builds;
+
+        for (const player of players) {
+            if (!player.ship) continue;
+            if (player.ship.side === planet.side) continue;
+            if (player.ship.romulanStatus.cloaked) continue;
+
+            const range = chebyshev(planet.position, player.ship.position);
+            if (base && planet.isBase) {
+                if (range > 4) continue; // Planet attack range is 4 sectors
+            } else {
+                if (range > 2) continue; // Planet attack range is 4 sectors
+            }
+
+            let hit = (50 + (30 * builds)) / numPlayers;
+            if (base && planet.isBase) {
+                hit = 200 / numPlayers;
+            }
+            if (Math.random() < getHitProbability(range)) {
+                applyPhaserShipDamage(planet, player, hit);
+            }
+
+        }
+    }
 }
 
 
@@ -97,11 +127,14 @@ export function isSocketLive(socket: net.Socket): boolean {
     return (!socket.destroyed && socket.writable && socket.readable);
 }
 
-function checkVictoryConditions(): void {
-    if (settings.winner != null || !settings.generated) return; // Already declared
+function checkEndGame(): void {
+    // From 1978 docs:
+    // This routine is called whenever a base or planet is destroyed
+    // to see if the game is over. (all the planets gone, and one
+    // side's bases).  If so, the appropriate message is printed out
+    // and the job is returned to monitor level.
 
-    // const fedAlive = players.some(p => p.ship.side === "FEDERATION");
-    // const empAlive = players.some(p => p.ship.side === "EMPIRE");
+    if (settings.winner != null || !settings.generated) return; // Already declared
 
     const fedBasesExist = bases.federation.length > 0;
     const empBasesExist = bases.empire.length > 0;
@@ -109,87 +142,31 @@ function checkVictoryConditions(): void {
     const fedPlanetsExist = planets.some(p => p.side === "FEDERATION");
     const empPlanetsExist = planets.some(p => p.side === "EMPIRE");
 
-    const fedEliminated = !fedBasesExist && !fedPlanetsExist;
-    const empEliminated = !empBasesExist && !empPlanetsExist;
-
-    if (empEliminated) {
-        settings.winner = "FEDERATION";
-    } else if (fedEliminated) {
-        settings.winner = "EMPIRE";
+    if (fedPlanetsExist || empPlanetsExist) {
+        return;
     }
 
+    if (!empBasesExist && fedBasesExist) {
+        settings.winner = "FEDERATION";
+    } else if (!fedBasesExist && empBasesExist) {
+        settings.winner = "EMPIRE";
+    } else {
+        settings.winner = "NEUTRAL";
+    }
+
+    let message = `\r\n*** The ${settings.winner} has won the war! ***\r\n`;
     if (settings.winner) {
-        const message = `\r\n*** The ${settings.winner} has won the war! ***\r\n`;
+        if (settings.winner === "NEUTRAL") {
+            let message = `\r\n*** The Federation and Empire have tied! ***\r\n`;
+        } else {
+            let message = `\r\n*** The ${settings.winner} has won the war! ***\r\n`;
+        }
+
         for (const player of [...players, ...limbo]) {
             sendMessageToClient(player, message);
             //putPlayerInLimbo(player); //TODO
         }
         //restartGame(); //TODO
-    }
-}
-
-export function performPlanetAttacks(): void {
-    const numPlayers = players.length;
-    for (const planet of planets) {
-        if (planet.isBase) continue;
-        if (Math.random() < 0.5) continue;
-        const builds = planet.builds;
-
-
-        for (const player of players) {
-            if (!player.ship) continue;
-            const range = chebyshev(planet.position, player.ship.position);
-            if (range > 2) continue; // Planet attack range is 4 sectors
-
-
-            // Skip if player is not alive or ship is cloaked
-            if (player.ship.romulanStatus.cloaked) {
-                continue;
-            }
-
-            // Skip if the planet is captured and the ship is on the same side
-            if (planet.side !== "NEUTRAL" && player.ship.side === planet.side) {
-                continue;
-            }
-
-            const hit = (50 + (30 * builds)) / numPlayers;
-            if (Math.random() < getHitProbability(range)) {
-                applyPhaserShipDamage(planet, player, hit);
-            }
-
-        }
-    }
-}
-
-export function performBaseAttacks(): void {
-    const allBases = [...bases.federation, ...bases.empire];
-
-    for (const base of allBases) {
-        const numPlayers = players.length;
-
-
-        for (const player of players) {
-            if (!player.ship) continue;
-            const range = chebyshev(base.position, player.ship.position);
-            if (range > 4) continue; // Planet attack range is 4 sectors
-
-
-            // Skip if player is not alive or ship is cloaked
-            if (player.ship.romulanStatus.cloaked) {
-                continue;
-            }
-
-            // Skip if the planet is captured and the ship is on the same side
-            if (player.ship.side === base.side) {
-                continue;
-            }
-
-            const hit = 200 / numPlayers;
-            if (Math.random() < getHitProbability(range)) {
-                applyPhaserShipDamage(base, player, hit);
-            }
-
-        }
     }
 }
 
