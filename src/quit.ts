@@ -39,18 +39,14 @@ function quit(player: Player): void {
 
     // Format message based on OutputSetting
     if (output === "SHORT") {
-        sendMessageToClient(player, `QUIT. SHIP DESTROYED.`, true, false);
+        sendMessageToClient(player, `Quit`, true, false);
     } else if (output === "LONG") {
-        sendMessageToClient(player, "You have chosen to resign from your post as captain.");
-        // sendMessageToClient(player, `Your final score was ${score} points.`);
-        sendMessageToClient(player, "Your ship has been destroyed. May you find peace among the stars.", true, false);
+        sendMessageToClient(player, "You have chosen to resign from your post as captain.", true, false);
     } else {
         // MEDIUM
-        sendMessageToClient(player, "YOU HAVE QUIT THE GAME.");
-        //sendMessageToClient(player, `FINAL SCORE: ${score} POINTS`);
-        sendMessageToClient(player, "SHIP DESTROYED.", true, false);
+        sendMessageToClient(player, "You have quit the game.", true, false);
     }
 
     // Remove player and disconnect
-    player.removeFromGame();
+    player.quitGame();
 }

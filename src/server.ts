@@ -7,6 +7,7 @@ import { queueCommands } from './command.js';
 import { MAX_PLAYERS } from './settings.js';
 import { swapPlayerForBackhole } from './gripe.js';
 import { parseAndExecutePGCommand } from './pregame.js';
+import { removePlayerFromGame } from './game.js';
 
 config();
 
@@ -241,7 +242,7 @@ function handleControlC(player: Player, socket: net.Socket): void {
       socket.write("You can't exit under condition RED.\r\n");
       socket.write(`${player.getPrompt()} `);
     } else {
-      //putPlayerInLimbo(player);
+      removePlayerFromGame(player);
       socket.write(`^C\r\n${player.getPrompt()} `);
     }
   } else {

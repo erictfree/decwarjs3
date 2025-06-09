@@ -244,7 +244,7 @@ export class Player {
     }
 
 
-    removeFromGame(): void {
+    quitGame(): void {
         const idx = players.findIndex(p => p === this);
         if (idx !== -1) players.splice(idx, 1);
 
