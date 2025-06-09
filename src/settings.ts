@@ -76,7 +76,7 @@ export const settings = {
     generated: false,
     winner: null as string | null,
     version: "0.3" + VERSION,
-    date: "2025-06-06",
+    date: "2025-06-08",
     allowRomulans: true,
     allowBlackHoles: true,
     outputDetail: "FULL",
@@ -87,5 +87,8 @@ export const settings = {
     ttyType: "DEFAULT",
     allowGripe: true,
     gameNumber: 1,
-    timeConsumingMoves: 0
+    timeConsumingMoves: 0,
+    galaxySeed: "0",
+    blackholes: false,
+    empire: false
 };

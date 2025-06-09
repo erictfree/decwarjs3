@@ -26,18 +26,21 @@ export const pointsManager: PointsManager = new PointsManager();
 
 export function generateGalaxy(seed?: string): void {
     if (!seed) {
-        seed = Date.now().toString();
+        seed = settings.galaxySeed;
     }
     setRandomSeed(seed);
 
     planets = Planet.generate();
     Planet.generateBases();
-    Blackhole.generate();
+    if (settings.blackholes) {
+        Blackhole.generate();
+    }
     Star.generate();
     settings.generated = true;
 }
 
 function updateGameTick(): void {
+    console.log(settings.galaxySeed);
     let ticked = nextTick();
     if (Math.random() < 0.5) {
         ticked = true;
@@ -53,7 +56,9 @@ function updateGameTick(): void {
 
     if (ticked) {
         updateRomulan();
-        maybeSpawnRomulan();
+        if (settings.empire) {
+            maybeSpawnRomulan();
+        }
         performPlanetOrBaseAttacks(false);
         performPlanetOrBaseAttacks(true);
         //energyRegeneration();
@@ -62,7 +67,9 @@ function updateGameTick(): void {
     }
 
     //checkForNova();
-    checkForBlackholes();
+    if (settings.blackholes) {
+        checkForBlackholes();
+    }
     //checkForInactivity();
     checkEndGame();  // just went planet/bases destroyed? TODO
     setTimeout(updateGameTick, 1000);
@@ -183,7 +190,9 @@ function checkEndGame(): void {
             sendMessageToClient(player, "", true, true);
 
         }
-        //restartGame(); //TODO
+        settings.generated = false;
+        settings.winner = null;
+        settings.gameNumber += 1;
     }
 }
 

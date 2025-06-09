@@ -26,8 +26,6 @@ const LINEMODE = 34;
 
 export const clients: Map<net.Socket, Player> = new Map();
 
-generateGalaxy("1749403633235");
-
 const server = net.createServer((socket) => {
   if (players.length >= MAX_PLAYERS) {
     socket.write("Server is full.\r\n");

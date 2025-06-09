@@ -2,6 +2,7 @@
 import { Player } from './player.js';
 import { Command, CommandHandler, tokenize } from './command.js';
 import { sendMessageToClient } from './communication.js';
+import { generateGalaxy } from './game.js';
 
 // Import only the valid pre-game handlers
 import { activateCommand } from './activate.js';
@@ -23,8 +24,8 @@ import { Ship } from './ship.js';
 import { generateAccessCode, isValidEmail } from './util/auth.js';
 import { sendEmail } from './util/send-email.js';
 import { addEmailToMailchimp } from './util/email.js';
-import { setRandomSeed, galaxySeed } from './util/random.js';
-import { players, generateGalaxy } from './game.js';
+import { setRandomSeed } from './util/random.js';
+import { players } from './game.js';
 
 // Map of pre-game command keys to their handlers
 const pgCommands = new Map<string, CommandHandler>([
@@ -175,12 +176,11 @@ export function promptForRegularOrTournament(player: Player, iter: number): void
         sendMessageToClient(player, "Too many attempts. Please try again later.");
         return;
     }
-    player.currentPrompt = "Regular play or Tournament? (R/T)? ";
+    player.currentPrompt = "Regular or Tournament game? ";
     player.callBack = (pl, resp) => {
         const trimmed = resp.trim();
         if (trimmed.toUpperCase().startsWith("R")) {
             setRandomSeed(Date.now().toString());
-            generateGalaxy();
             promptForLevel(pl, 0);
         } else if (trimmed.toUpperCase().startsWith("T")) {
             promptForSeed(pl, 0);
@@ -196,13 +196,12 @@ export function promptForSeed(player: Player, iter: number): void {
         sendMessageToClient(player, "Too many attempts. Please try again later.");
         return;
     }
-    player.currentPrompt = "Enter your galaxy id (any word or number): ";
+    player.currentPrompt = "Tournament name or number: ";
     player.callBack = (pl, resp) => {
         const trimmed = resp.trim();
         if (trimmed.length >= 1) {
             setRandomSeed(trimmed);
-            generateGalaxy();
-            promptForLevel(pl, 0);
+            promptForRomulanEmpire(pl, 0);
         } else {
             sendMessageToClient(pl, "Invalid entry.");
             promptForSeed(pl, iter + 1);
@@ -296,7 +295,7 @@ function promptForSide(player: Player, iter: number): void {
         sendMessageToClient(player, "Too many attempts to choose side. Please try again later.");
         return;
     }
-    player.currentPrompt = 'Which side do you wish to join? (Federation or Empire) ';
+    player.currentPrompt = 'Which side do you wish to join?\r\n(Federation or Empire) ';
     player.callBack = (pl, resp) => {
         if (!pl.ship) {
             sendMessageToClient(pl, "You must be in a ship to choose a side.");
@@ -384,7 +383,7 @@ export function promptForShip(player: Player, iter: number): void {
         // Move back to players
         //limbo.splice(limbo.indexOf(player), 1); TODO
         players.push(player);
-        sendMessageToClient(player, `\r\nDECWARJS game #${settings.gameNumber}, Galaxy: ${galaxySeed}\r\n\r\n`, false, true);
+        sendMessageToClient(player, `\r\nDECWARJS game #${settings.gameNumber}, Galaxy: ${settings.galaxySeed}\r\n\r\n`, false, true);
 
 
         // sendMessageToClient(
@@ -421,4 +420,55 @@ function getRandomShip(side: Side): string | null {
     if (available.length === 0) return null;
     const idx = Math.floor(Math.random() * available.length);
     return available[idx];
+}
+
+
+export function promptForRomulanEmpire(player: Player, iter: number): void {
+    if (iter > 4) {
+        sendMessageToClient(player, "Too many attempts. Please try again later.");
+        return;
+    }
+    player.currentPrompt = "Is the Romulan Empire involved in this conflict? (Yes or No) ";
+    player.callBack = (pl, resp) => {
+        const trimmed = resp.trim();
+        if (trimmed.toUpperCase().startsWith("Y")) {
+            settings.empire = true;
+            promptForBlackholes(pl, 0);
+        } else if (trimmed.toUpperCase().startsWith("N")) {
+            settings.empire = false;
+            promptForBlackholes(pl, 0);
+        } else {
+            sendMessageToClient(pl, "Please enter Y or N. ");
+            promptForRomulanEmpire(pl, iter + 1);
+        }
+    };
+    sendMessageToClient(player, "", false, true);
+}
+
+
+export function promptForBlackholes(player: Player, iter: number): void {
+    if (iter > 4) {
+        sendMessageToClient(player, "Too many attempts. Please try again later.");
+        return;
+    }
+    player.currentPrompt = "Do you want black holes? (Yes or No) ";
+
+    player.callBack = (pl, resp) => {
+        const trimmed = resp.trim();
+        if (trimmed.toUpperCase().startsWith("Y")) {
+            settings.blackholes = true;
+
+            generateGalaxy();
+
+            promptForLevel(pl, 0);
+        } else if (trimmed.toUpperCase().startsWith("N")) {
+            settings.blackholes = false;
+            generateGalaxy();
+            promptForLevel(pl, 0);
+        } else {
+            sendMessageToClient(pl, "Please enter Y or N. ");
+            promptForBlackholes(pl, iter + 1);
+        }
+    };
+    sendMessageToClient(player, "", false, true);
 }
