@@ -9,7 +9,8 @@ import {
 import { sendMessageToClient, addPendingMessage } from './communication.js';
 import { chebyshev, ocdefCoords, getCoordsFromCommandArgs } from './coords.js';
 import { Planet } from './planet.js';
-import { players, planets, bases } from './game.js';
+import { players, planets, bases, removePlayerFromGame } from './game.js';
+import { pointsManager } from './game.js';
 
 export function phaserCommand(player: Player, command: Command): void {
     if (!player.ship) {
@@ -23,7 +24,7 @@ export function phaserCommand(player: Player, command: Command): void {
     const bankIndex = ph1 <= ph2 ? 0 : 1;
     let energy = 200;  // default energy
 
-    // if (!requireDevices(player, ["phaser"])) return;  TODO: add this back in
+    if (!player.ship.isDeviceOperational("phaser")) return;
 
     if (now < player.ship.cooldowns.phasersAvailableAt[bankIndex]) {
         switch (player.settings.output) {
@@ -227,13 +228,14 @@ export function phaserCommand(player: Player, command: Command): void {
 }
 
 export function applyPhaserBaseDamage(player: Player, target: Planet, damage: number): void {
+    if (!player.ship) return;
     if (target.strength === 1000 && !target.hasCriedForHelp) {
         target.hasCriedForHelp = true;
         target.callForHelp(target.position.v, target.position.h, target.side);
     }
-
     // Apply damage
     target.strength = Math.max(0, target.strength - damage);
+    pointsManager.addDamageToBases(damage, player, player.ship.side);
 
     // Send hit message using output level
     const formatted = formatPhaserBaseHit({
@@ -251,9 +253,6 @@ export function applyPhaserBaseDamage(player: Player, target: Planet, damage: nu
         if (index !== -1) baseArray.splice(index, 1);
 
         sendMessageToClient(player, formatPhaserBaseDestroyed(player, target));
-
-        //player.points.basesDestroyed += 1;  TODO: add this back in
-
     }
 }
 
@@ -348,29 +347,25 @@ export function applyPhaserShipDamage(source: Player | Planet, target: Player, d
         formatFunc: formatPhaserHit
     });
 
-    if (source instanceof Player) {
+    if (source instanceof Player && source.ship) {
         if (target.ship.romulanStatus?.isRomulan) {
-            source.points.damageToRomulans += damage;
+            pointsManager.addDamageToRomulans(damage, source, source.ship.side);
         } else {
-            source.points.damageToEnemies += damage;
+            pointsManager.addDamageToEnemies(damage, source, source.ship.side);
         }
     }
 
     // Handle ship destruction
     if (target.ship.energy <= 0 || target.ship.damage >= DESTRUCTION_DAMAGE_THRESHOLD) {
+        sendMessageToClient(target, `Your ship was destroyed by ${targetSide} ship ${targetId} with phasers.`);
+        removePlayerFromGame(target);
         if (source instanceof Player) {
             sendMessageToClient(source, `${sourceName} destroyed ${targetSide} ship ${targetId} at ${targetPos} with phasers.`);
         }
-        target.ship.isDestroyed = true;  //TODO: add this back in
 
-        if (source instanceof Player) {
-            // source.points.shipsDestroyed += 1;
-            // if (target.ship.romulanStatus?.isRomulan) {  TODO
-            //     source.points.romulansDestroyed += 1;
-            // }
+        if (source instanceof Player && source.ship) {
+            pointsManager.addEnemiesDestroyed(1, source, source.ship.side);
         }
-
-        //addNewsItem(`${target.ship.name} destroyed by ${source.ship.name} via phasers.`);
     }
 }
 
@@ -420,7 +415,7 @@ export function formatPhaserBaseHit({
     base: Planet;
     damage: number;
 }): string {
-    if (!player.ship) return "?, ?";//TODO
+    if (!player.ship) return "The phaser malfunctioned.";
     const dmg = Math.round(damage);
     const coords = ocdefCoords(player.settings.ocdef, player.ship.position, base.position);
     const attacker = player.ship.name;
@@ -480,7 +475,7 @@ export function sendFormattedMessageToObservers({
 }
 
 export function formatPhaserPlanetHit(player: Player, planet: Planet): string {
-    if (!player.ship) return "?, ?"; //TODO
+    if (!player.ship) return "The phaser malfunctioned.";
     const coords = ocdefCoords(player.settings.ocdef, player.ship.position, planet.position);
     const name = player.ship.name;
     switch (player.settings.output) {
@@ -495,7 +490,7 @@ export function formatPhaserPlanetHit(player: Player, planet: Planet): string {
 }
 
 export function formatPhaserBaseDestroyed(player: Player, base: Planet): string {
-    if (!player.ship) return "?, ?";  //TODO
+    if (!player.ship) return "The phaser malfunctioned.";
     const coords = ocdefCoords(player.settings.ocdef, player.ship.position, base.position);
     const output = player.settings.output;
     switch (output) {

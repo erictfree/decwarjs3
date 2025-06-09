@@ -40,13 +40,12 @@ export function generateGalaxy(seed?: string): void {
 }
 
 function updateGameTick(): void {
-    console.log(settings.tournamentSeed);
     let ticked = nextTick();
     if (Math.random() < 0.5) {
         ticked = true;
     }
-    if (ticked)
-        console.log(settings.timeConsumingMoves, players.length, ticked);
+    // if (ticked)
+    //     console.log(settings.timeConsumingMoves, players.length, ticked);
 
     checkForDisconnectedPlayers();
 

@@ -2,14 +2,106 @@ import { Command } from "./command.js";
 import { sendMessageToClient } from "./communication.js";
 import { matchesPattern } from "./util/util.js";
 import { Player } from './player.js';
-import { Side } from './settings.js';
-import { pointsManager } from "./game.js";
+import { Side, settings } from './settings.js';
+import { pointsManager } from './game.js';
+
+export type PointCategory =
+  | 'damageToEnemies'
+  | 'enemiesDestroyed'
+  | 'damageToBases'
+  | 'planetsCaptured'
+  | 'basesBuilt' // Used for both building and destroying bases
+  | 'damageToRomulans'
+  | 'starsDestroyed'
+  | 'planetsDestroyed';
+
+type Points = Record<PointCategory, number>;
 
 interface Score {
   label: string;
   points: Points;
   ships?: number;
-  stardates?: number;
+}
+
+export class PointsManager {
+  private sidePoints: Record<Side, Points>;
+  private shipsCommissioned: Record<Side, number>;
+
+  constructor() {
+    const empty: Points = {
+      damageToEnemies: 0,
+      enemiesDestroyed: 0,
+      damageToBases: 0,
+      planetsCaptured: 0,
+      basesBuilt: 0,
+      damageToRomulans: 0,
+      starsDestroyed: 0,
+      planetsDestroyed: 0,
+    };
+    this.sidePoints = {
+      FEDERATION: { ...empty },
+      EMPIRE: { ...empty },
+      ROMULAN: { ...empty },
+      NEUTRAL: { ...empty }, // Unused but kept for consistency
+    };
+    this.shipsCommissioned = {
+      FEDERATION: 0,
+      EMPIRE: 0,
+      ROMULAN: 0,
+      NEUTRAL: 0,
+    };
+  }
+
+  private add(category: PointCategory, amount: number, player: Player | undefined, side: Side): void {
+    if (player) {
+      player.points[category] += amount;
+    }
+    this.sidePoints[side][category] += amount;
+  }
+
+  addDamageToEnemies(amount: number, player: Player | undefined, side: Side): void {
+    this.add('damageToEnemies', amount, player, side);
+  }
+
+  addEnemiesDestroyed(amount: number, player: Player | undefined, side: Side): void {
+    this.add('enemiesDestroyed', amount, player, side);
+  }
+
+  addDamageToBases(amount: number, player: Player | undefined, side: Side): void {
+    this.add('damageToBases', amount, player, side);
+  }
+
+  addPlanetsCaptured(amount: number, player: Player | undefined, side: Side): void {
+    this.add('planetsCaptured', amount, player, side);
+  }
+
+  addBasesBuilt(amount: number, player: Player | undefined, side: Side): void {
+    this.add('basesBuilt', amount, player, side); // Also used for base destruction
+  }
+
+  addDamageToRomulans(amount: number, player: Player | undefined, side: Side): void {
+    this.add('damageToRomulans', amount, player, side);
+  }
+
+  addStarsDestroyed(amount: number, player: Player | undefined, side: Side): void {
+    this.add('starsDestroyed', amount, player, side);
+  }
+
+  addPlanetsDestroyed(amount: number, player: Player | undefined, side: Side): void {
+    this.add('planetsDestroyed', amount, player, side);
+  }
+
+  incrementShipsCommissioned(side: Side): void {
+    this.shipsCommissioned[side]++;
+  }
+
+  getShipsCommissioned(side: Side): number {
+    return this.shipsCommissioned[side];
+  }
+
+  getPointsForSide(side: Side): Points {
+    return this.sidePoints[side];
+  }
 }
 
 export function pointsCommand(player: Player, command: Command): void {
@@ -42,8 +134,7 @@ export function pointsCommand(player: Player, command: Command): void {
     scores.push({
       label: player.ship.name,
       points: player.points,
-      ships: 1,
-      stardates: 1,
+      ships: 1, // Individual player has 1 ship
     });
   }
 
@@ -51,8 +142,7 @@ export function pointsCommand(player: Player, command: Command): void {
     scores.push({
       label: "FEDERATION",
       points: pointsManager.getPointsForSide("FEDERATION"),
-      ships: 1,
-      stardates: 1,
+      ships: pointsManager.getShipsCommissioned("FEDERATION"),
     });
   }
 
@@ -60,99 +150,20 @@ export function pointsCommand(player: Player, command: Command): void {
     scores.push({
       label: "EMPIRE",
       points: pointsManager.getPointsForSide("EMPIRE"),
-      ships: 1,
-      stardates: 1,
+      ships: pointsManager.getShipsCommissioned("EMPIRE"),
     });
   }
 
   if (keywords.includes("ALL") || keywords.includes("ROMULAN")) {
-    //TODO
+    scores.push({
+      label: "ROMULAN",
+      points: pointsManager.getPointsForSide("ROMULAN"),
+      ships: pointsManager.getShipsCommissioned("ROMULAN"),
+    });
   }
 
   const output = formatScores(scores);
   sendMessageToClient(player, output);
-}
-
-export type PointCategory =
-  | 'damageToEnemies'
-  | 'enemiesDestroyed'
-  | 'damageToBases'
-  | 'planetsCaptured'
-  | 'basesBuilt'
-  | 'damageToRomulans'
-  | 'starsDestroyed'
-  | 'planetsDestroyed';
-
-type Points = Record<PointCategory, number>;
-
-export class PointsManager {
-  private sidePoints: Record<Side, Points>;
-
-  constructor() {
-    const empty: Points = {
-      damageToEnemies: 0,
-      enemiesDestroyed: 0,
-      damageToBases: 0,
-      planetsCaptured: 0,
-      basesBuilt: 0,
-      damageToRomulans: 0,
-      starsDestroyed: 0,
-      planetsDestroyed: 0,
-    };
-
-    this.sidePoints = {
-      FEDERATION: { ...empty },
-      EMPIRE: { ...empty },
-      ROMULAN: { ...empty },  //not used
-      NEUTRAL: { ...empty },  //not used
-    };
-  }
-
-  private add(category: PointCategory, amount: number, player: Player | undefined, side: Side): void {
-    // Update player's personal stats if applicable
-    if (player) {
-      player.points[category] += amount;
-    }
-
-    // Always update side points
-    this.sidePoints[side][category] += amount;
-  }
-
-  addDamageToEnemies(amount: number, player: Player | undefined, side: Side): void {
-    this.add('damageToEnemies', amount, player, side);
-  }
-
-  addEnemiesDestroyed(amount: number, player: Player | undefined, side: Side): void {
-    this.add('enemiesDestroyed', amount, player, side);
-  }
-
-  addDamageToBases(amount: number, player: Player | undefined, side: Side): void {
-    this.add('damageToBases', amount, player, side);
-  }
-
-  addPlanetsCaptured(amount: number, player: Player | undefined, side: Side): void {
-    this.add('planetsCaptured', amount, player, side);
-  }
-
-  addBasesBuilt(amount: number, player: Player | undefined, side: Side): void {
-    this.add('basesBuilt', amount, player, side);
-  }
-
-  addDamageToRomulans(amount: number, player: Player | undefined, side: Side): void {
-    this.add('damageToRomulans', amount, player, side);
-  }
-
-  addStarsDestroyed(amount: number, player: Player | undefined, side: Side): void {
-    this.add('starsDestroyed', amount, player, side);
-  }
-
-  addPlanetsDestroyed(amount: number, player: Player | undefined, side: Side): void {
-    this.add('planetsDestroyed', amount, player, side);
-  }
-
-  getPointsForSide(side: Side): Points {
-    return this.sidePoints[side];
-  }
 }
 
 function formatScores(scores: Score[]): string {
@@ -160,13 +171,25 @@ function formatScores(scores: Score[]): string {
     return "";
   }
 
-  // Define all possible point-related headers
+  // Define scaling factors per DECWAR .POINTS help text
+  const pointScales: Record<PointCategory, number> = {
+    damageToEnemies: 1,    // Direct damage value
+    enemiesDestroyed: 500, // 500 points per enemy
+    damageToBases: 1,      // Direct damage value
+    planetsCaptured: 100,  // 100 points per planet
+    basesBuilt: 1000,      // 1000 points per base built or destroyed
+    damageToRomulans: 1,   // Direct damage value
+    starsDestroyed: -50,   // -50 points per star
+    planetsDestroyed: -100 // -100 points per planet
+  };
+
+  // Define point-related headers
   const pointHeaders: { label: string; key: keyof Points }[] = [
     { label: "Damage to enemies", key: "damageToEnemies" },
     { label: "Enemies destroyed", key: "enemiesDestroyed" },
     { label: "Damage to bases", key: "damageToBases" },
     { label: "Planets captured", key: "planetsCaptured" },
-    { label: "Bases built", key: "basesBuilt" },
+    { label: "Bases built", key: "basesBuilt" }, // or "Bases destroyed"
     { label: "Damage to Romulans", key: "damageToRomulans" },
     { label: "Stars destroyed", key: "starsDestroyed" },
     { label: "Planets destroyed", key: "planetsDestroyed" },
@@ -182,7 +205,7 @@ function formatScores(scores: Score[]): string {
   const headers = [...activeHeaders.map(h => h.label), ...fixedHeaders];
   const maxLabelLength = Math.max(...scores.map(s => s.label.length), ...headers.map(h => h.length));
   const colWidth = 15;
-  const formatNum = (n: number | undefined): string => n !== undefined ? n.toFixed(1).padStart(6) : "0.0".padStart(6);
+  const formatNum = (n: number | undefined): string => n !== undefined ? n.toString().padStart(6) : "0".padStart(6);
 
   // Build header row
   let result = " ".repeat(maxLabelLength);
@@ -203,7 +226,7 @@ function formatScores(scores: Score[]): string {
       switch (header) {
         case "Total points:":
           value = formatNum(
-            activeHeaders.reduce((sum, h) => sum + score.points[h.key], 0)
+            activeHeaders.reduce((sum, h) => sum + score.points[h.key] * pointScales[h.key], 0)
           );
           break;
         case "Number of ships:":
@@ -211,17 +234,17 @@ function formatScores(scores: Score[]): string {
           break;
         case "Pts. / player:":
           value = formatNum(
-            score.ships ? activeHeaders.reduce((sum, h) => sum + score.points[h.key], 0) / score.ships : 0
+            score.ships ? activeHeaders.reduce((sum, h) => sum + score.points[h.key] * pointScales[h.key], 0) / score.ships : 0
           );
           break;
         case "Pts. / stardate:":
           value = formatNum(
-            score.stardates ? activeHeaders.reduce((sum, h) => sum + score.points[h.key], 0) / score.stardates : 0
+            settings.stardate ? activeHeaders.reduce((sum, h) => sum + score.points[h.key] * pointScales[h.key], 0) / settings.stardate : 0
           );
           break;
         default: {
           const pointHeader = activeHeaders.find(h => h.label === header);
-          value = pointHeader ? formatNum(score.points[pointHeader.key]) : "0.0".padStart(6);
+          value = pointHeader ? formatNum(score.points[pointHeader.key] * pointScales[pointHeader.key]) : "0".padStart(6);
           break;
         }
       }

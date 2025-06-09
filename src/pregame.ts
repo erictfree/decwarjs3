@@ -88,6 +88,13 @@ export function parseAndExecutePGCommand(player: Player, input: string): void {
     }
 }
 
+export function sendGameInfo(player: Player): void {
+    sendMessageToClient(player, `There are ${settings.romulans ? "" : "no "}Romulans in this game.`);
+    sendMessageToClient(player, `There are ${settings.blackholes ? "" : "no "}Black holes in this game.`);
+    sendMessageToClient(player,
+        `Currently there are ${players.filter(p => p.ship?.side === "FEDERATION").length} Federation ships and ${players.filter(p => p.ship?.side === "EMPIRE").length} Empire ships.\r\n`);
+}
+
 export function promptForEmail(player: Player, iter: number): void {
     if (iter > 4) {
         sendMessageToClient(player, "Too many attempts. Please try again later.");
@@ -99,10 +106,7 @@ export function promptForEmail(player: Player, iter: number): void {
         if (trimmed === "theq") {
             pl.auth.authed = true;
             if (settings.generated) {
-                sendMessageToClient(player, `There are ${settings.romulans ? "" : "no "}Romulans in this game.`);
-                sendMessageToClient(player, `There are ${settings.blackholes ? "" : "no "}Black holes in this game.`);
-                sendMessageToClient(player,
-                    `Currently there are ${players.filter(p => p.ship?.side === "FEDERATION").length} Federation ships and ${players.filter(p => p.ship?.side === "EMPIRE").length} Empire ships.\r\n`);
+                sendGameInfo(pl);
                 promptForLevel(pl, 0);
             } else {
                 promptForRegularOrTournament(pl, 0);
@@ -114,18 +118,6 @@ export function promptForEmail(player: Player, iter: number): void {
             //     promptForSide(pl, 0);
             // }
         } else if (isValidEmail(trimmed)) {
-            //const prevPlayer = emailHasSameIp(trimmed, pl.auth.ip);
-            // if (prevPlayer) {
-            //     if (prevPlayer.ship.side) {
-            //         pl.ship.side = prevPlayer.ship.side;
-            //     }
-            //     pl.settings = { ...prevPlayer.settings };
-            //     pl.auth.authed = true;
-            //     sendMessageToClient(pl, "Welcome back to the game Captain!");
-            //     promptForShip(pl, 0);
-            //     return;
-            // } else {
-
             pl.auth.email = trimmed;
             pl.auth.code = generateAccessCode();
             pl.auth.createdAt = Date.now();
@@ -163,6 +155,7 @@ export function promptForAccessCode(player: Player, iter: number): void {
         if (trimmed === pl.auth.code) {
             pl.auth.authed = true;
             if (settings.generated) {
+                sendGameInfo(pl);
                 promptForLevel(pl, 0);
             } else {
                 promptForRegularOrTournament(pl, 0);
@@ -216,10 +209,6 @@ export function promptForSeed(player: Player, iter: number): void {
 }
 
 export function promptForLevel(player: Player, iter: number): void {
-    // if (false) {//} && getPlayerSettings(player)) {  //TODO
-    //     chooseSide(player);
-    //     return;
-    // }
     if (iter > 4) {
         sendMessageToClient(player, "Too many attempts. Please try again later.");
         return;
@@ -381,15 +370,8 @@ export function promptForShip(player: Player, iter: number): void {
         pl.ship.side = side;
         pl.ship.position = findEmptyLocation() || { v: 1, h: 1 };
 
-        // Move back to players
-        //limbo.splice(limbo.indexOf(player), 1); TODO
         players.push(player);
         sendMessageToClient(player, `\r\nDECWARJS game #${settings.gameNumber}, ${settings.tournamentSeed}\r\n\r\n`, false, true);
-
-        // sendMessageToClient(
-        //     player,
-        //     `Activated at sector ${pl.ship.position.y}-${pl.ship.position.x}`
-        // );
     };
 
     sendMessageToClient(player, "", false, true); // Trigger the prompt
@@ -421,7 +403,6 @@ function getRandomShip(side: Side): string | null {
     const idx = Math.floor(Math.random() * available.length);
     return available[idx];
 }
-
 
 export function promptForRomulanEmpire(player: Player, iter: number): void {
     if (iter > 4) {
