@@ -87,9 +87,7 @@ function nextTick(): boolean {
 export function performPlanetOrBaseAttacks(base: boolean = false): void {
     const numPlayers = players.length;
     for (const planet of planets) {
-        if (planet.isBase) continue;
-        if (Math.random() < 0.5) continue;
-        const builds = planet.builds;
+        if (planet.isBase !== base) continue; // Only process bases if base=true, planets if base=false
 
         for (const player of players) {
             if (!player.ship) continue;
@@ -97,24 +95,17 @@ export function performPlanetOrBaseAttacks(base: boolean = false): void {
             if (player.ship.romulanStatus.cloaked) continue;
 
             const range = chebyshev(planet.position, player.ship.position);
-            if (base && planet.isBase) {
-                if (range > 4) continue; // Planet attack range is 4 sectors
-            } else {
-                if (range > 2) continue; // Planet attack range is 4 sectors
-            }
+            const maxRange = base ? 4 : 2; // 4 sectors for bases, 2 for planets
+            if (range > maxRange) continue;
 
-            let hit = (50 + (30 * builds)) / numPlayers;
-            if (base && planet.isBase) {
-                hit = 200 / numPlayers;
-            }
-            if (Math.random() < getHitProbability(range)) {
+            let hit = base ? 200 / numPlayers : (50 + 30 * planet.builds) / numPlayers;
+            hit *= Math.max(0, 1 - range / (base ? 5 : 3)); // Linear damage reduction to 0 at max range + 1
+            if (hit > 0) {
                 applyPhaserShipDamage(planet, player, hit);
             }
-
         }
     }
 }
-
 
 function checkForPendingMessages(): void {
     sendAllPendingMessages();
