@@ -26,7 +26,7 @@ export const pointsManager: PointsManager = new PointsManager();
 
 export function generateGalaxy(seed?: string): void {
     if (!seed) {
-        seed = settings.galaxySeed;
+        seed = settings.tournamentSeed;
     }
     setRandomSeed(seed);
 
@@ -40,7 +40,7 @@ export function generateGalaxy(seed?: string): void {
 }
 
 function updateGameTick(): void {
-    console.log(settings.galaxySeed);
+    console.log(settings.tournamentSeed);
     let ticked = nextTick();
     if (Math.random() < 0.5) {
         ticked = true;
@@ -56,7 +56,7 @@ function updateGameTick(): void {
 
     if (ticked) {
         updateRomulan();
-        if (settings.empire) {
+        if (settings.romulans) {
             maybeSpawnRomulan();
         }
         performPlanetOrBaseAttacks(false);

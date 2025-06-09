@@ -88,7 +88,7 @@ export const settings = {
     allowGripe: true,
     gameNumber: 1,
     timeConsumingMoves: 0,
-    galaxySeed: "0",
+    tournamentSeed: "0",
     blackholes: false,
-    empire: false
+    romulans: false
 };

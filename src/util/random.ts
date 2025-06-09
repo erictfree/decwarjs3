@@ -8,8 +8,8 @@ import { settings } from '../settings.js';
 let rng: PRNG | null = null;
 
 export function setRandomSeed(str: string): void {
-    settings.galaxySeed = str;
-    rng = seedrandom(settings.galaxySeed);
+    settings.tournamentSeed = str;
+    rng = seedrandom(settings.tournamentSeed);
 }
 
 export function getRandom(): number {

@@ -26,6 +26,7 @@ import { sendEmail } from './util/send-email.js';
 import { addEmailToMailchimp } from './util/email.js';
 import { setRandomSeed } from './util/random.js';
 import { players } from './game.js';
+import { setegid } from 'process';
 
 // Map of pre-game command keys to their handlers
 const pgCommands = new Map<string, CommandHandler>([
@@ -99,6 +100,10 @@ export function promptForEmail(player: Player, iter: number): void {
         if (trimmed === "theq") {
             pl.auth.authed = true;
             if (settings.generated) {
+                sendMessageToClient(player, `There are ${settings.romulans ? "" : "no "}Romulans in this game.`);
+                sendMessageToClient(player, `There are ${settings.blackholes ? "" : "no "}Black holes in this game.`);
+                sendMessageToClient(player,
+                    `Currently there are ${players.filter(p => p.ship?.side === "FEDERATION").length} Federation ships and ${players.filter(p => p.ship?.side === "EMPIRE").length} Empire ships.\r\n`);
                 promptForLevel(pl, 0);
             } else {
                 promptForRegularOrTournament(pl, 0);
@@ -181,6 +186,7 @@ export function promptForRegularOrTournament(player: Player, iter: number): void
         const trimmed = resp.trim();
         if (trimmed.toUpperCase().startsWith("R")) {
             setRandomSeed(Date.now().toString());
+            generateGalaxy();
             promptForLevel(pl, 0);
         } else if (trimmed.toUpperCase().startsWith("T")) {
             promptForSeed(pl, 0);
@@ -376,15 +382,10 @@ export function promptForShip(player: Player, iter: number): void {
         pl.ship.side = side;
         pl.ship.position = findEmptyLocation() || { v: 1, h: 1 };
 
-        // zero points?
-
-        //sendMessageToClient(player, `*** New ship ${pl.ship.name} commissioned. ***${limbo.includes(player) ? '\r\nWelcome back, Captain.' : ''}`);
-
         // Move back to players
         //limbo.splice(limbo.indexOf(player), 1); TODO
         players.push(player);
-        sendMessageToClient(player, `\r\nDECWARJS game #${settings.gameNumber}, Galaxy: ${settings.galaxySeed}\r\n\r\n`, false, true);
-
+        sendMessageToClient(player, `\r\nDECWARJS game #${settings.gameNumber}, ${settings.tournamentSeed}\r\n\r\n`, false, true);
 
         // sendMessageToClient(
         //     player,
@@ -432,10 +433,10 @@ export function promptForRomulanEmpire(player: Player, iter: number): void {
     player.callBack = (pl, resp) => {
         const trimmed = resp.trim();
         if (trimmed.toUpperCase().startsWith("Y")) {
-            settings.empire = true;
+            settings.romulans = true;
             promptForBlackholes(pl, 0);
         } else if (trimmed.toUpperCase().startsWith("N")) {
-            settings.empire = false;
+            settings.romulans = false;
             promptForBlackholes(pl, 0);
         } else {
             sendMessageToClient(pl, "Please enter Y or N. ");

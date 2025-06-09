@@ -1,6 +1,5 @@
 import * as net from 'net';
 import { config } from 'dotenv';
-import { generateGalaxy } from './game.js';
 import { Player } from './player.js';
 import { players, limbo } from './game.js';
 import { queueCommands } from './command.js';
