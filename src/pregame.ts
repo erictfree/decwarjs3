@@ -321,7 +321,10 @@ function promptForSide(player: Player, iter: number): void {
 
 export function promptForShip(player: Player, iter: number): void {
     const side = player.ship?.side ?? "NEUTRAL";
-    if (side == "NEUTRAL") return;
+    if (side == "NEUTRAL") {
+        console.log("Player in promptForShip must choose a side first.");
+        return;
+    }
 
     if (iter > 4) {
         sendMessageToClient(player, "Too many attempts to choose ship. Please try again later.");
@@ -395,10 +398,9 @@ export function promptForShip(player: Player, iter: number): void {
 
 export function getAvailableShips(side: Side): string[] {
     const masterList = side === "FEDERATION" ? FEDERATION_SHIPS : EMPIRE_SHIPS;
-    const taken = players.map(p => p.ship!.name);
+    const taken = players.map(p => p.ship?.name ?? "Unknown");
     return masterList.filter(name => !taken.includes(name));
 }
-
 
 function getBalancedSide(): "EMPIRE" | "FEDERATION" {
     const fedCount = players.filter(p => p.ship!.side === "FEDERATION").length;

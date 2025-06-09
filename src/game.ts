@@ -10,6 +10,7 @@ import { sendAllPendingMessages, sendMessageToClient } from "./communication.js"
 import net from "net";
 import { chebyshev } from "./coords.js";
 import { applyPhaserShipDamage } from "./phaser.js";
+import { pointsCommand } from "./points.js";
 
 export const players: Player[] = [];
 export const limbo: Player[] = [];
@@ -134,37 +135,53 @@ function checkEndGame(): void {
     // side's bases).  If so, the appropriate message is printed out
     // and the job is returned to monitor level.
 
-    if (settings.winner != null || !settings.generated) return; // Already declared
+    if (settings.winner != null || !settings.generated) return;
 
-    const fedBasesExist = bases.federation.length > 0;
-    const empBasesExist = bases.empire.length > 0;
-
-    const fedPlanetsExist = planets.some(p => p.side === "FEDERATION");
-    const empPlanetsExist = planets.some(p => p.side === "EMPIRE");
+    const fedPlanetsExist = planets.some(p => p.side === "FEDERATION" && !p.isBase);
+    const empPlanetsExist = planets.some(p => p.side === "EMPIRE" && !p.isBase);
 
     if (fedPlanetsExist || empPlanetsExist) {
         return;
     }
 
+    const fedBasesExist = bases.federation.length > 0;
+    const empBasesExist = bases.empire.length > 0;
+
     if (!empBasesExist && fedBasesExist) {
         settings.winner = "FEDERATION";
     } else if (!fedBasesExist && empBasesExist) {
         settings.winner = "EMPIRE";
-    } else {
+    } else if (!empBasesExist && !fedBasesExist) {
         settings.winner = "NEUTRAL";
+    } else {
+        return;
     }
+    console.log(settings.winner);
 
-    let message = `\r\n*** The ${settings.winner} has won the war! ***\r\n`;
+    let message = ``;
     if (settings.winner) {
+        message += `\r\nThe game has ended.\r\n`;
         if (settings.winner === "NEUTRAL") {
-            let message = `\r\n*** The Federation and Empire have tied! ***\r\n`;
+            message += `All planets and bases have been destroyed. No victor emerges.\r\n`;
         } else {
-            let message = `\r\n*** The ${settings.winner} has won the war! ***\r\n`;
+            if (settings.winner === "FEDERATION") {
+                message += `All Empire starbases have been eliminated.\r\n`;
+                message += `The Empire has been defeated. The Federation is victorious!\r\n`;
+            } else {
+                message += `All Federation starbases have been eliminated.\r\n`;
+                message += `The Federation has been defeated. The Empire is victorious!\r\n`;
+            }
         }
 
-        for (const player of [...players, ...limbo]) {
+        for (let i = players.length - 1; i >= 0; i--) {
+            const player = players[i];
+            removePlayerFromGame(player);
+            if (!player.ship) continue;
+
             sendMessageToClient(player, message);
-            //putPlayerInLimbo(player); //TODO
+            pointsCommand(player, { key: 'POINTS', args: ['all'], raw: 'points all' });
+            sendMessageToClient(player, "", true, true);
+
         }
         //restartGame(); //TODO
     }
@@ -194,8 +211,8 @@ export function removePlayerFromGame(player: Player): void {
     // if (shipIdx !== -1) destroyedShips.splice(shipIdx, 1);
     // Close their socket
     // playerCache.push(player);
-    player.socket?.end();
-    player.socket?.destroy();
+    // player.socket?.end();
+    // player.socket?.destroy();
 }
 
 function getHitProbability(distance: number): number {

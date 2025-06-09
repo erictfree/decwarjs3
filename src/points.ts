@@ -13,7 +13,6 @@ interface Score {
 }
 
 export function pointsCommand(player: Player, command: Command): void {
-
   if (player.ship === null) {
     sendMessageToClient(player, "You must be in a ship to use this command.");
     return;

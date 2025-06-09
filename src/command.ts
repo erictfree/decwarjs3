@@ -35,7 +35,7 @@ import { restartCommand } from './util/restart.js';
 import { clearCommand } from './util/clear.js';
 import { sendMessageToClient } from './communication.js';
 import { oveCommand } from './ove.js';
-
+import { tweakCommand } from './tweak.js';
 
 interface TokenizedInput {
     tokens: string[][];
@@ -96,7 +96,8 @@ const decwarCommands = new Map<string, CommandHandler>([
     ["TR", tractorCommand],
     ["TY", typeCommand],
     ["U", usersCommand],
-    ["O", oveCommand]
+    ["O", oveCommand],
+    ["TW", tweakCommand]
 ]);
 
 // --- Tokenization ---
