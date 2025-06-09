@@ -26,7 +26,6 @@ import { sendEmail } from './util/send-email.js';
 import { addEmailToMailchimp } from './util/email.js';
 import { setRandomSeed } from './util/random.js';
 import { players } from './game.js';
-import { setegid } from 'process';
 
 // Map of pre-game command keys to their handlers
 const pgCommands = new Map<string, CommandHandler>([
@@ -217,10 +216,10 @@ export function promptForSeed(player: Player, iter: number): void {
 }
 
 export function promptForLevel(player: Player, iter: number): void {
-    if (false) {//} && getPlayerSettings(player)) {  //TODO
-        chooseSide(player);
-        return;
-    }
+    // if (false) {//} && getPlayerSettings(player)) {  //TODO
+    //     chooseSide(player);
+    //     return;
+    // }
     if (iter > 4) {
         sendMessageToClient(player, "Too many attempts. Please try again later.");
         return;
