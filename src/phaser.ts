@@ -258,6 +258,7 @@ export function applyPhaserBaseDamage(player: Player, target: Planet, damage: nu
 }
 
 export function applyPhaserShipDamage(source: Player | Planet, target: Player, damage: number): void {
+    console.log("applyPhaserShipDamage ", damage);
     if (source instanceof Player && !source.ship) {
         return;
     }
@@ -394,8 +395,11 @@ export function formatPhaserHit({
     targetShieldPercent: number;
     outputLevel: OutputSetting;
 }): string {
+    console.log("damange ", damage);
     const dmg = Math.round(damage);
+    console.log("damange ", dmg);
     const shields = Math.round(targetShieldPercent);
+    console.log("shields ", shields);
 
     switch (outputLevel) {
         case "LONG":
