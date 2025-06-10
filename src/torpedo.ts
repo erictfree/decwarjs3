@@ -13,8 +13,9 @@ import { Planet } from './planet.js';
 import { isInBounds, bresenhamLine, chebyshev, ocdefCoords } from './coords.js';
 //import { triggerNovaAt } from './nova.js'; TODO
 import { disconnectTractorWithReason } from './tractor.js';
-import { players, bases, planets, stars, blackholes } from './game.js';
+import { players, bases, planets, stars, blackholes, pointsManager, removePlayerFromGame } from './game.js';
 import { handleUndockForAllShipsAfterPortDestruction, attemptDisplaceFromImpact } from './ship.js';
+import { triggerNovaAt } from './nova.js';
 
 const TORPEDO_MIN_HIT = 4000;
 const TORPEDO_MAX_HIT = 8000;
@@ -31,10 +32,11 @@ type TorpedoCollision =
     | null;
 
 
-function traceTorpedoPath(start: Point, target: Point): TorpedoCollision {
+function traceTorpedoPath(player: Player, start: Point, target: Point): TorpedoCollision {
 
     if (!isInBounds(start.v, start.h) || !isInBounds(target.v, target.h)) {
-        throw new Error(`Start ${JSON.stringify(start)} or target ${JSON.stringify(target)} is outside grid boundaries`); //TODO
+        sendMessageToClient(player, `Start ${JSON.stringify(start)} or target ${JSON.stringify(target)} is outside grid boundaries`);
+        return null;
     }
 
     // Calculate direction vector
@@ -79,7 +81,8 @@ function traceTorpedoPath(start: Point, target: Point): TorpedoCollision {
 
         // Verify point is within grid (defensive check)
         if (!isInBounds(v, h)) {
-            throw new Error(`Bresenham point (${v}, ${h}) is outside grid boundaries`);  //TODO
+            sendMessageToClient(player, `Bresenham point (${v}, ${h}) is outside grid boundaries`);
+            return null;
         }
 
         // Check for ship
@@ -282,7 +285,10 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
             continue;
         }
 
-        const collision = traceTorpedoPath(player.ship.position, target);
+        const collision = traceTorpedoPath(player, player.ship.position, target);
+        if (!collision) {
+            continue;
+        }
         let fired = false;
         switch (collision?.type) {
             case "ship":
@@ -304,8 +310,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
             case "star":
                 sendMessageToClient(player, formatTorpedoExplosion(player, target.v, target.h));
                 if (Math.random() > 0.8) {
-                    player.points.starsDestroyed += 1;
-                    //triggerNovaAt(player, target.v, target.h);
+                    triggerNovaAt(player, target.v, target.h);
                 }
                 fired = true;
                 break;
@@ -448,7 +453,8 @@ export function applyTorpedoPlanetDamage(attacker: Player, planet: Planet, n: nu
         planet.builds = 0;
         planet.side = "NEUTRAL";
 
-        attacker.points.planetsDestroyed += 1;
+        pointsManager.addPlanetsDestroyed(1, attacker, attacker.ship.side);
+
         sendMessageToClient(attacker, `Planet at ${coords} destroyed!`);
         handleUndockForAllShipsAfterPortDestruction(planet);
         //removeFromMemory(planet); TODO
@@ -496,7 +502,7 @@ export function applyTorpedoBaseDamage(attacker: Player, base: Planet, n: number
         console.log("index: " + index);
         if (index !== -1) baseList.splice(index, 1);
         //removeFromMemory(base); TODO
-        //attacker.points.basesDestroyed += 1; TODO
+        pointsManager.addBasesBuilt(1, attacker, attacker.ship.side);
         sendMessageToClient(attacker, `The ${base.side} base at ${coords} has been destroyed!`);
 
         handleUndockForAllShipsAfterPortDestruction(base);
@@ -514,11 +520,8 @@ export function applyTorpedoShipDamage(
     allowDeviceCrit: boolean = true,
     n: number = 1
 ): void {
-    if (!target.ship) {
+    if (!target.ship || (attacker instanceof Player && !attacker.ship)) {
         return;
-    }
-    if (attacker instanceof Player && !attacker.ship) {
-        return;  //TODO
     }
 
     if (
@@ -541,11 +544,11 @@ export function applyTorpedoShipDamage(
         target.ship.level = Math.max(0, shieldLevel - shieldLoss);
     }
 
-    if (attacker instanceof Player) {
+    if (attacker instanceof Player && attacker.ship) {
         if (target.ship.romulanStatus?.isRomulan) {
-            attacker.points.damageToRomulans += finalDamage;
+            pointsManager.addDamageToRomulans(finalDamage, attacker, attacker.ship.side);
         } else {
-            attacker.points.damageToEnemies += finalDamage;
+            pointsManager.addDamageToEnemies(finalDamage, attacker, attacker.ship.side);
         }
     }
 
@@ -592,19 +595,19 @@ export function applyTorpedoShipDamage(
 
     // Handle ship destruction
     if (target.ship.energy <= 0 || target.ship.damage >= DESTRUCTION_DAMAGE_THRESHOLD) {
-        if (attacker instanceof Player && target.ship.romulanStatus?.isRomulan) {
-            //attacker.points.romulansDestroyed += 1; TODO
-        }
 
         target.ship.energy = 0;//TODO
         target.ship.isDestroyed = true;
 
-        addPendingMessage(target, `You have been destroyed by ${attackerName}.`);
-        //putPlayerInLimbo(target, true); TODO
+        sendMessageToClient(target, `You have been destroyed by ${attackerName}.`); // sendmessage given needs to be delivered.
+        removePlayerFromGame(target);
+
 
         if (attacker instanceof Player) {
+            if (attacker.ship) {
+                pointsManager.addEnemiesDestroyed(1, attacker, attacker.ship.side);
+            }
             sendMessageToClient(attacker, `${target.ship.name} destroyed by torpedo hit!`);
-            // attacker.points.shipsDestroyed += 1;
         }
 
     }

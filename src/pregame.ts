@@ -89,8 +89,10 @@ export function parseAndExecutePGCommand(player: Player, input: string): void {
 }
 
 export function sendGameInfo(player: Player): void {
-    sendMessageToClient(player, `There are ${settings.romulans ? "" : "no "}Romulans in this game.`);
-    sendMessageToClient(player, `There are ${settings.blackholes ? "" : "no "}Black holes in this game.`);
+    // external setu06 !There are Romulans in this game.!
+    // external setu07 !There are Black holes in this game.!
+    sendMessageToClient(player, `Romulans are ${settings.romulans ? "" : "NOT "}in this game.`);
+    sendMessageToClient(player, `Black holes are ${settings.blackholes ? "" : "NOT "}in this game.`);
     sendMessageToClient(player,
         `Currently there are ${players.filter(p => p.ship?.side === "FEDERATION").length} Federation ships and ${players.filter(p => p.ship?.side === "EMPIRE").length} Empire ships.\r\n`);
 }

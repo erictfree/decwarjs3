@@ -1,8 +1,9 @@
 import { sendMessageToClient, sendMessageToOthersWithFormat } from "./communication.js";
-import { players, stars } from "./game.js";
+import { players, stars, pointsManager, removePlayerFromGame } from "./game.js";
 import { Player } from "./player.js";
 import { ocdefCoords } from "./coords.js";
 import { disconnectTractorWithReason } from "./tractor.js";
+
 
 export function triggerNovaAt(player: Player, v: number, h: number): void {
     if (!player.ship) return;
@@ -23,7 +24,8 @@ export function triggerNovaAt(player: Player, v: number, h: number): void {
     }
 
     removeStarAt(v, h);
-    player.points.starsDestroyed += 1;
+    pointsManager.addStarsDestroyed(1, player, player.ship.side);
+
 
     for (const star of stars.slice()) { //cascade nova
         const dh = Math.abs(star.position.h - h);
@@ -65,7 +67,9 @@ function applyNovaDamage(attacker: Player, player: Player, damage: number, v: nu
 
     if (player.ship.energy <= 0 || player.ship.damage >= 2500) {
         if (attacker !== player) {  // no credit for killing yourself
-            //attacker.points.shipsDestroyed += 1; TODO
+            if (attacker.ship) {
+                pointsManager.addEnemiesDestroyed(1, attacker, attacker.ship.side);
+            }
         }
         destroyShipByNova(player, v, h);
     }
@@ -73,8 +77,6 @@ function applyNovaDamage(attacker: Player, player: Player, damage: number, v: nu
 
 function destroyShipByNova(player: Player, v: number, h: number): void {
     if (!player.ship) return;
-
-    player.ship.isDestroyed = true; //TODO
 
     sendMessageToClient(player, `Your ship was destroyed by a nova explosion!`);
     const name = player.ship.name ?? "Unknown";
@@ -84,7 +86,7 @@ function destroyShipByNova(player: Player, v: number, h: number): void {
         return formatNovaKillMessage(name, coords, recipient.settings.output);
     });
 
-    //putPlayerInLimbo(player, true); TODO
+    removePlayerFromGame(player);
 }
 
 function formatNovaKillMessage(name: string, coords: string, output: "SHORT" | "MEDIUM" | "LONG"): string {

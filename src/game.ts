@@ -157,16 +157,14 @@ function checkEndGame(): void {
 
     let message = ``;
     if (settings.winner) {
-        message += `\r\nThe game has ended.\r\n`;
+        message += `\r\nTHE WAR IS OVER!!!\r\n`;
         if (settings.winner === "NEUTRAL") {
-            message += `All planets and bases have been destroyed. No victor emerges.\r\n`;
+            message += `The entire known galaxy has been depopulated.\r\n`;
         } else {
             if (settings.winner === "FEDERATION") {
-                message += `All Empire starbases have been eliminated.\r\n`;
-                message += `The Empire has been defeated. The Federation is victorious!\r\n`;
+                message += `The Federation has successfully repelled the Klingon hordes!!\r\n`;
             } else {
-                message += `All Federation starbases have been eliminated.\r\n`;
-                message += `The Federation has been defeated. The Empire is victorious!\r\n`;
+                message += `The Klingon Empire is VICTORIOUS!!!\r\n`;
             }
         }
 
@@ -174,6 +172,16 @@ function checkEndGame(): void {
             const player = players[i];
             removePlayerFromGame(player);
             if (!player.ship) continue;
+
+            if (settings.winner === "FEDERATION" && player.ship.side === "FEDERATION") {
+                message += `Congratulations. Freedom again reigns the galaxy.\r\n`;
+            } else if (settings.winner === "EMPIRE" && player.ship.side === "EMPIRE") {
+                message += `The Empire salutes you. Begin slave operations immediately.\r\n`;
+            } else if (settings.winner === "FEDERATION" && player.ship.side === "EMPIRE") {
+                message += `The Empire has fallen. Initiate self-destruction procedure.\r\n`;
+            } else if (settings.winner === "EMPIRE" && player.ship.side === "FEDERATION") {
+                message += `Please proceed to the nearest Klingon slave planet."\r\n`;
+            }
 
             sendMessageToClient(player, message);
             pointsCommand(player, { key: 'POINTS', args: ['all'], raw: 'points all' });
@@ -185,6 +193,19 @@ function checkEndGame(): void {
         settings.gameNumber += 1;
     }
 }
+
+/*
+
+endgm0	"THE WAR IS OVER!!!"	Generic endgame banner
+endgm1	"The entire known galaxy has been depopulated."	Everyone destroyed (stalemate)
+endgm3	"The Klingon Empire is VICTORIOUS!!!"	Empire wins
+endgm4	"The Federation has successfully repelled the Klingon hordes!!"	Federation wins
+endgm5	"Please proceed to the nearest Klingon slave planet."	Federation defeat (player message)
+endgm6	"Congratulations. Freedom again reigns the galaxy."	Federation win (player message)
+endgm7	"The Empire salutes you. Begin slave operations immediately."	Empire win (player message)
+endgm8	"The Empire has fallen. Initiate self-destruction procedure."
+
+    */
 
 export function checkForBlackholes(): void {
     for (const player of players) {
@@ -214,9 +235,9 @@ export function removePlayerFromGame(player: Player): void {
     // player.socket?.destroy();
 }
 
-function getHitProbability(distance: number): number {
-    const maxProb = 0.65; // 65% at 0 sectors
-    const minProb = 0.05; // 5% at max range (4 for bases, 2 for planets)
-    const maxRange = 4; // or 2 for planets
-    return minProb + (maxProb - minProb) * (1 - distance / maxRange);
-}
+// function getHitProbability(distance: number): number {
+//     const maxProb = 0.65; // 65% at 0 sectors
+//     const minProb = 0.05; // 5% at max range (4 for bases, 2 for planets)
+//     const maxRange = 4; // or 2 for planets
+//     return minProb + (maxProb - minProb) * (1 - distance / maxRange);
+// }

@@ -16,20 +16,26 @@ export function tractorCommand(player: Player, command: Command): void {
         return;
     }
 
+    if (player.ship.tractorPartner) {
+        sendMessageToClient(player, "Tractor beam already active, sir.");
+        return;
+    }
+
     if (!player.ship.isDeviceOperational("tractor")) return;
 
     // TRACTOR or TRACTOR OFF to release
     if (!arg || arg === "OFF") {
-        if (player.ship.tractorPartner) {
-            const target = player.ship.tractorPartner;
-            target.tractorPartner = null;
+        if (player.ship.tractorPartner !== null) {
+            const targetShip = player.ship.tractorPartner as Ship;
+            targetShip.tractorPartner = null;
+            const partnerPlayer = targetShip.player;
             player.ship.tractorPartner = null;
             sendOutputMessage(player, {
                 SHORT: "Trac. Beam off",
                 MEDIUM: "Trac. Beam off",
                 LONG: "Tractor beam broken, Captain."
             });
-            addPendingMessage(target.player, `${player.ship.name} has disengaged tractor beam.`);
+            addPendingMessage(partnerPlayer, `${player.ship.name} has disengaged tractor beam.`);
         } else {
             sendMessageToClient(player, "No tractor beam is active.");
         }
@@ -60,11 +66,11 @@ export function tractorCommand(player: Player, command: Command): void {
         return;
     }
     if (target === player) {
-        sendMessageToClient(player, "You cannot tractor yourself.");
+        sendMessageToClient(player, "Beg your pardon, sir?  You want to apply a tractor beam to your own ship?");
         return;
     }
     if (player.ship.side !== target.ship.side) {
-        sendMessageToClient(player, "You may only tractor a ship from your own team.");
+        sendMessageToClient(player, "Can not apply tractor beam to enemy ship.");
         return;
     }
 
@@ -78,8 +84,13 @@ export function tractorCommand(player: Player, command: Command): void {
         return;
     }
 
-    if (player.ship.shieldsUp || target.ship.shieldsUp) {
+    if (player.ship.shieldsUp) {
         sendMessageToClient(player, "Both ships must have shields down to initiate tractor beam.");
+        return;
+    }
+
+    if (target.ship.shieldsUp) {
+        sendMessageToClient(player, `${target.ship.name} has his shields up.  Unable to apply tractor beam.`);
         return;
     }
 

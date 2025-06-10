@@ -279,7 +279,7 @@ export class Ship {
                 computer: "ERROR: Computer too damaged to compute coordinates.",
                 lifeSupport: "WARNING: Life support system failing.",
                 radio: "ERROR: Radio system inoperative.",
-                tractor: "ERROR: Tractor beam malfunction.",
+                tractor: "Tractor beam not in operation at this time, sir.",
             };
             return messages[device] ?? `ERROR: ${device} system failure.`;
         }
