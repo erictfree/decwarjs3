@@ -11,8 +11,7 @@ export class Blackhole {
         this.position = { v, h };
     }
 
-    static generate(): Blackhole[] {
-        const count = 5 + Math.floor(getRandom() * 6); // 5–10
+    static generate(count: number = 10): Blackhole[] {
         let attempts = 0;
 
         while (blackholes.length < count && attempts < 1000) {

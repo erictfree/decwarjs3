@@ -247,7 +247,7 @@ export class Ship {
     }
 
     computeShieldStrength(): string {
-        const percentage = (this.level / MAX_SHIELD_ENERGY) * 100;
+        const percentage = (this.level / MAX_SHIELD_ENERGY) * 100;    //TODO SHIELD AND LEVEL?  is this correct?
         const strength = Math.max(0, Math.floor(percentage));
         return strength === 100
             ? `${strength}%`

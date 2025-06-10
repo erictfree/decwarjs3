@@ -1,5 +1,5 @@
 import { GRID_WIDTH, GRID_HEIGHT, NUMBER_OF_PLANETS, Side, DEFAULT_BASE_ENERGY } from './settings.js';
-import { chebyshev, ocdefCoords, Position } from './coords.js';
+import { findObjectAtPosition, ocdefCoords, Position } from './coords.js';
 import { planets, bases } from './game.js';
 import { getRandom } from './util/random.js';
 import { getNearbyAlliedShips } from './ship.js';
@@ -10,7 +10,7 @@ export class Planet {
     public side: Side;
     public builds: number;
     public isBase: boolean;
-    public strength: number;   // base
+    public energy: number;   // base
     public name: string;
     public hasCriedForHelp: boolean;
     //public captureProgress: { by: Side, progress: number, player: Player } | undefined;   // NOT CLEAR CHECK USAGE
@@ -20,7 +20,7 @@ export class Planet {
         this.side = "NEUTRAL";
         this.builds = 0;
         this.isBase = false;
-        this.strength = 0;
+        this.energy = 0;
         this.name = "unnamed planet";
         this.hasCriedForHelp = false;
         //this.captureProgress = undefined;   // NOT CLEAR CHECK USAGE
@@ -30,7 +30,7 @@ export class Planet {
         const baseArray = side === "FEDERATION" ? bases.federation : bases.empire;
         this.isBase = true;
         this.side = side;
-        this.strength = DEFAULT_BASE_ENERGY;
+        this.energy = DEFAULT_BASE_ENERGY;
         baseArray.push(this);
     }
 
@@ -39,7 +39,7 @@ export class Planet {
             const baseArray = this.side === "FEDERATION" ? bases.federation : bases.empire;
             this.isBase = false;
             this.side = "NEUTRAL";
-            this.strength = 0;
+            this.energy = 0;
             baseArray.splice(baseArray.indexOf(this), 1);
         }
     }
@@ -65,13 +65,14 @@ export class Planet {
     static generate(count: number = NUMBER_OF_PLANETS): Planet[] {
         const planets: Planet[] = [];
         for (let i = 0; i < count; i++) {
-            let v: number, h: number, conflict: boolean;
+            let v: number, h: number;
+            let conflict: boolean;
             let tries = 0;
 
             do {
                 v = Math.floor(getRandom() * GRID_HEIGHT + 1);    // REPLACE FOR SEED
                 h = Math.floor(getRandom() * GRID_WIDTH + 1); // REPLACE FOR SEED
-                conflict = planets.some(p => chebyshev(p.position, { v: v, h: h }) < 2);
+                conflict = findObjectAtPosition(v, h) !== null;
                 tries++;
             } while (conflict && tries < 500);
 

@@ -9,8 +9,7 @@ import {
 import { sendMessageToClient, addPendingMessage } from './communication.js';
 import { chebyshev, ocdefCoords, getCoordsFromCommandArgs } from './coords.js';
 import { Planet } from './planet.js';
-import { players, planets, bases, removePlayerFromGame } from './game.js';
-import { pointsManager } from './game.js';
+import { players, planets, bases, removePlayerFromGame, checkEndGame, pointsManager } from './game.js';
 
 export function phaserCommand(player: Player, command: Command): void {
     if (!player.ship) {
@@ -229,12 +228,12 @@ export function phaserCommand(player: Player, command: Command): void {
 
 export function applyPhaserBaseDamage(player: Player, target: Planet, damage: number): void {
     if (!player.ship) return;
-    if (target.strength === 1000 && !target.hasCriedForHelp) {
+    if (target.energy === 1000 && !target.hasCriedForHelp) {
         target.hasCriedForHelp = true;
         target.callForHelp(target.position.v, target.position.h, target.side);
     }
     // Apply damage
-    target.strength = Math.max(0, target.strength - damage);
+    target.energy = Math.max(0, target.energy - damage);
     pointsManager.addDamageToBases(damage, player, player.ship.side);
 
     // Send hit message using output level
@@ -247,10 +246,12 @@ export function applyPhaserBaseDamage(player: Player, target: Planet, damage: nu
     sendMessageToClient(player, formatted);
 
     // Destroy base if needed
-    if (target.strength === 0) {
+    if (target.energy === 0) {
+        target.isBase = false;
         const baseArray = target.side === "FEDERATION" ? bases.federation : bases.empire;
         const index = baseArray.indexOf(target);
         if (index !== -1) baseArray.splice(index, 1);
+        checkEndGame();
 
         sendMessageToClient(player, formatPhaserBaseDestroyed(player, target));
     }
@@ -292,6 +293,15 @@ export function applyPhaserShipDamage(source: Player | Planet, target: Player, d
     // Apply remaining damage to health
     if (remainingDamage > 0) {
         target.ship.energy = Math.max(0, target.ship.energy - remainingDamage);
+    }
+
+    // DECWAR-style critical device hit — 20% chance
+    if (Math.random() < 0.2) {
+        const deviceKeys = Object.keys(target.ship.devices) as (keyof typeof target.ship.devices)[];
+        const randomDevice = deviceKeys[Math.floor(Math.random() * deviceKeys.length)];
+        const critDamage = Math.floor(remainingDamage * 0.5);
+        target.ship.devices[randomDevice] = Math.min(target.ship.devices[randomDevice] + critDamage, 1000);
+        addPendingMessage(target, `CRITICAL HIT: ${randomDevice} damaged (${critDamage})!`);
     }
 
     // Update condition based on shield and health
@@ -503,3 +513,47 @@ export function formatPhaserBaseDestroyed(player: Player, base: Planet): string 
             return `The ${base.side} base at ${coords} has been destroyed!`;
     }
 }
+/*
+* unclear this needed
+
+export function starbasePhaserDefense(triggeringPlayer: Player): void {
+    if (!triggeringPlayer.ship) return;
+    const isRomulan = triggeringPlayer.ship.romulanStatus?.isRomulan ?? false;
+
+    // Determine which teams' starbases fire
+    const targetSides: ("FEDERATION" | "EMPIRE")[] = isRomulan
+        ? ["FEDERATION", "EMPIRE"]
+        : triggeringPlayer.ship.side === "FEDERATION"
+            ? ["EMPIRE"]
+            : ["FEDERATION"];
+
+    for (const side of targetSides) {
+        const sideBases = side === "FEDERATION" ? bases.federation : bases.empire;
+
+        for (const base of sideBases) {
+            if (base.energy <= 0) continue;
+
+            for (const player of players) {
+                if (!player.ship) continue;
+                if (player.ship.romulanStatus?.cloaked) continue;
+                if (player.ship.side === side && !player.ship.romulanStatus?.isRomulan) continue;
+
+                if (chebyshev(player.ship.position, base.position) > STARBASE_PHASER_RANGE) continue;
+
+                const damage = starbasePhaserDamage();
+
+                addPendingMessage(player, `\r\n** ALERT ** Starbase at ${base.position.v}-${base.position.h} opens fire!`);
+                addPendingMessage(player, `You are under automatic phaser attack from enemy starbase!`);
+
+                applyPhaserShipDamage(base, player, damage); //maked sure
+            }
+        }
+    }
+}
+
+function starbasePhaserDamage(): number {
+    const count = [...players].filter(p => p.ship).length;
+    return Math.floor(200 / Math.max(1, count));
+}
+
+*/

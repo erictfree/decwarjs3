@@ -10,7 +10,7 @@ import {
 import { getCoordsFromCommandArgs, ocdefCoords, chebyshev } from "./coords.js";
 import { Player } from "./player.js";
 import { planets, pointsManager } from "./game.js";
-//import { applyPhaserShipDamage } from "./base.js"; //TODO: add this back in
+//  import { starbasePhaserDefense } from "./phaser.js"; //TODO: verify this isn't a real part of classic game
 
 export function captureCommand(player: Player, command: Command, done?: () => void): void {
     if (command.args.length < 2) {
@@ -126,6 +126,8 @@ export function captureCommand(player: Player, command: Command, done?: () => vo
                 LONG: `You captured planet at ${coords}.`,
             });
         }
+
+        //starbasePhaserDefense(player);
 
         done?.();
     }, captureDelayMs);

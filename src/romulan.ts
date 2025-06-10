@@ -313,8 +313,8 @@ export function romulanBaseRepair(): void {
     for (const side of ['FEDERATION', 'EMPIRE'] as const) {
         const sideBases = side === 'FEDERATION' ? bases.federation : bases.empire;
         for (const base of sideBases) {
-            if (base.strength > 0) {
-                base.strength = Math.min(1000, base.strength + repairAmount);
+            if (base.energy > 0) {
+                base.energy = Math.min(1000, base.energy + repairAmount);
             }
         }
     }

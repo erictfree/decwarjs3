@@ -358,7 +358,7 @@ function formatBaseLine(base: Planet, mode: OutputSetting, viewer: Player): stri
 
     const coord = `${formatCoordsForPlayer2(base.position.v, base.position.h, viewer)}`;
     //const delta = `${dx >= 0 ? "+" : ""}${dx},${dy >= 0 ? "+" : ""}${dy}`.padStart(9);
-    const shieldPct = (base.strength / INITIAL_BASE_STRENGTH) * 100;
+    const shieldPct = (base.energy / INITIAL_BASE_STRENGTH) * 100;
     let shieldDisplay = `+${shieldPct.toFixed(1)}${percent}`.padStart(9);
     if (mode === "SHORT" || mode === "MEDIUM") {
         shieldDisplay = `${shieldPct.toFixed(0)}${percent}`.padStart(8);

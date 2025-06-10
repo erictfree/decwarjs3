@@ -30,12 +30,22 @@ export function generateGalaxy(seed?: string): void {
     }
     setRandomSeed(seed);
 
-    planets = Planet.generate();
-    Planet.generateBases();
+    //     nstar = int(51 * ran(0)) * 5 + 100
+    //     nhole = int(41.0 * ran(0) + 10)
+    //    c-- nplnet = int(20.0 + ran(0) * 61.0)
+    //     nplnet = 60 ! ALWAYS insert max. # of planets
+
+    const nstar = Math.floor(51 * Math.random()) * 5 + 100;
+    const nhole = Math.floor(41 * Math.random() + 10);
+    const nplnet = 60;
+
+    planets = Planet.generate(nplnet);
+    Planet.generateBases();  // 10 each
+    Star.generate(nstar);
     if (settings.blackholes) {
-        Blackhole.generate();
+        Blackhole.generate(nhole);
     }
-    Star.generate();
+    console.log(nstar, nhole, nplnet);
     settings.generated = true;
 }
 
@@ -70,7 +80,6 @@ function updateGameTick(): void {
         checkForBlackholes();
     }
     //checkForInactivity();
-    checkEndGame();  // just went planet/bases destroyed? TODO
     setTimeout(updateGameTick, 1000);
 }
 updateGameTick();
@@ -125,7 +134,7 @@ export function isSocketLive(socket: net.Socket): boolean {
     return (!socket.destroyed && socket.writable && socket.readable);
 }
 
-function checkEndGame(): void {
+export function checkEndGame(): void {
     // From 1978 docs:
     // This routine is called whenever a base or planet is destroyed
     // to see if the game is over. (all the planets gone, and one

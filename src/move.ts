@@ -303,7 +303,7 @@ export function impulseCommand(player: Player, command: Command, done?: () => vo
         ship.position = destination;
         sendMessageToClient(player, `IMPULSE complete to sector ${coords}`);
 
-        // tractorShip(ship);  TODO??
+        tractorShip(ship);
         done?.();
     }, delayMs);
 

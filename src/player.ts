@@ -73,7 +73,7 @@ export class Player {
         this.inputBuffer = '';
         this.pendingMessages = [];
         this.multiLine = false;
-        this.ship = this.createShip();  // TODO PUT BACK TODO
+        this.ship = this.createShip();
         this.gagList = new Set();
         this.radioOn = false;
         //this.alive = false;
