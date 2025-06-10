@@ -4,25 +4,154 @@ import { Player } from "./player.js";
 import { ocdefCoords, isAdjacent } from "./coords.js";
 import { disconnectTractorWithReason } from "./tractor.js";
 import { Planet } from "./planet.js";
+import { Blackhole } from "./blackhole.js";
+import { Ship } from "./ship.js";
 
+// Check if a position is within the galaxy (Fortran: ingal)
+function isInGalaxy(v: number, h: number): boolean {
+    // Assuming galaxy is 0–99 for both v and h (adjust based on your game)
+    return v >= 0 && v <= 99 && h >= 0 && h <= 99;
+}
+
+// Check if a position is empty or contains a black hole (Fortran: dispc)
+function getPositionType(v: number, h: number): string {
+    // Check for black hole (adjust based on your game's black hole representation)
+    if (planets.some(p => p.position.v === v && p.position.h === h && p instanceof Blackhole)) {
+        return "BLACK_HOLE";
+    }
+    // Check if occupied by ship, planet, or base
+    if (
+        players.some(p => p.ship && p.ship.position.v === v && p.ship.position.h === h) ||
+        planets.some(p => p.position.v === v && p.position.h === h) ||
+        bases.federation.some(b => b.position.v === v && b.position.h === h) ||
+        bases.empire.some(b => b.position.v === v && b.position.h === h)
+    ) {
+        return "OCCUPIED";
+    }
+    return "EMPTY";
+}
+
+// Displace a ship or base to a new position (Fortran: setdsp)
+function displaceObject(obj: Ship | Planet, newV: number, newH: number): void {
+    if (obj instanceof Ship) {
+        obj.position.v = newV;
+        obj.position.h = newH;
+        obj.condition = "RED";
+        obj.docked = false; // Fortran: docked(j) = .FALSE.
+    } else if (obj instanceof Planet) {
+        obj.position.v = newV;
+        obj.position.h = newH;
+        // If obj is a base, update its location in the bases array
+        if (obj.isBase) {
+            // Find the base in the correct base array and update its position
+            const baseArray = obj.side === "FEDERATION" ? bases.federation : bases.empire;
+            const baseIndex = baseArray.findIndex(b => b === obj);
+            if (baseIndex !== -1) {
+                baseArray[baseIndex].position.v = newV;
+                baseArray[baseIndex].position.h = newH;
+            }
+        }
+    }
+}
 
 export function triggerNovaAt(player: Player, v: number, h: number): void {
     if (!player.ship) return;
 
     communicateNova(player, v, h);
 
+    const directions = [
+        { disV: -1, disH: 0 }, // Up
+        { disV: 1, disH: 0 },  // Down
+        { disV: 0, disH: -1 }, // Left
+        { disV: 0, disH: 1 },  // Right
+    ];
+
+    // Handle ships
     for (const other of players) {
         if (!other.ship) continue;
 
         if (isAdjacent(other.ship.position, { v, h })) {
             const damage = 1000 + Math.random() * 2000;
             applyNovaDamageShip(player, other, damage, v, h);
-            disconnectTractorWithReason(player.ship, "nova");
+
+            // Find tractoring player (if any)
+            const tractoringShip = other.ship.tractorPartner
+
+            // Attempt displacement (Fortran: JUMP)
+            const oldV = other.ship.position.v;
+            const oldH = other.ship.position.h;
+
+            for (const { disV, disH } of directions) {
+                const newV = oldV + disV;
+                const newH = oldH + disH;
+
+                if (!isInGalaxy(newV, newH)) continue;
+                if (!isAdjacent({ v: oldV, h: oldH }, { v: newV, h: newH })) continue;
+
+                const posType = getPositionType(newV, newH);
+                if (posType === "BLACK_HOLE") {
+                    destroyShipByNova(other, newV, newH);
+                    sendMessageToClient(other, `Your ship was displaced into a black hole at ${newV}-${newH} by a nova!`);
+                    if (player !== other && player.ship) {
+                        pointsManager.addEnemiesDestroyed(1, player, player.ship.side);
+                    }
+                    if (tractoringShip) {
+                        disconnectTractorWithReason(tractoringShip, `Target destroyed by black hole at ${newV}-${newH}`);
+                    }
+                    break;
+                } else if (posType === "EMPTY") {
+                    displaceObject(other.ship, newV, newH);
+                    sendMessageToClient(other, `Your ship was displaced to ${newV}-${newH} by a nova!`);
+                    break;
+                }
+            }
+            // Removed: if (!displaced) { disconnectTractorWithReason(other.ship, "nova"); }
         }
     }
 
+    // Handle planets and bases
     for (const planet of planets) {
         if (isAdjacent(planet.position, { v, h })) {
+            if (planet.isBase) {
+                const side = planet.side;
+                if (side !== "FEDERATION" && side !== "EMPIRE") continue;
+                const basesArray = side === "FEDERATION" ? bases.federation : bases.empire;
+                const base = basesArray.find(b => b.position.v === planet.position.v && b.position.h === planet.position.h);
+                if (!base) continue;
+
+                const oldV = base.position.v;
+                const oldH = base.position.h;
+
+                for (const { disV, disH } of directions) {
+                    const newV = oldV + disV;
+                    const newH = oldH + disH;
+
+                    if (!isInGalaxy(newV, newH)) continue;
+                    if (!isAdjacent({ v: oldV, h: oldH }, { v: newV, h: newH })) continue;
+
+                    const posType = getPositionType(newV, newH);
+                    if (posType === "BLACK_HOLE") {
+                        base.energy = 0;
+                        planet.isBase = false;
+                        basesArray.splice(basesArray.indexOf(base), 1);
+                        sendMessageToClient(player, `Base at ${oldV}-${oldH} was displaced into a black hole at ${newV}-${newH} by a nova!`);
+                        if (player.ship.side !== side) {
+                            pointsManager.addDamageToBases(10000, player, player.ship.side);
+                        } else {
+                            pointsManager.addDamageToBases(-10000, player, player.ship.side);
+                        }
+                        checkEndGame();
+                        break;
+                    } else if (posType === "EMPTY") {
+                        displaceObject(base, newV, newH);
+                        planet.position.v = newV;
+                        planet.position.h = newH;
+                        sendMessageToClient(player, `Base at ${oldV}-${oldH} was displaced to ${newV}-${newH} by a nova!`);
+                        break;
+                    }
+                }
+            }
+
             applyNovaDamagePlanet(player, planet, v, h);
         }
     }
@@ -31,7 +160,7 @@ export function triggerNovaAt(player: Player, v: number, h: number): void {
     pointsManager.addStarsDestroyed(1, player, player.ship.side);
 
     let time = 300;
-    for (const star of stars.slice()) { //cascade nova, let's not stack resursive calls but do it event based 
+    for (const star of stars.slice()) {
         if (isAdjacent(star.position, { v, h }) && Math.random() < 0.8) {
             setTimeout(() => {
                 triggerNovaAt(player, star.position.v, star.position.h);
@@ -71,10 +200,8 @@ function applyNovaDamageShip(attacker: Player, player: Player, damage: number, v
     sendMessageToClient(player, msg);
 
     if (player.ship.energy <= 0 || player.ship.damage >= 2500) {
-        if (attacker !== player) {  // no credit for killing yourself
-            if (attacker.ship) {
-                pointsManager.addEnemiesDestroyed(1, attacker, attacker.ship.side);
-            }
+        if (attacker !== player && attacker.ship) {
+            pointsManager.addEnemiesDestroyed(1, attacker, attacker.ship.side);
         }
         destroyShipByNova(player, v, h);
     }
@@ -89,30 +216,23 @@ function applyNovaDamagePlanet(player: Player, planet: Planet, v: number, h: num
 
     if (planet.isBase) {
         const side = planet.side;
-        if (side !== "FEDERATION" && side !== "EMPIRE") return; // Only valid base sides
+        if (side !== "FEDERATION" && side !== "EMPIRE") return;
         const basesArray = side === "FEDERATION" ? bases.federation : bases.empire;
-        const baseIndex = basesArray.findIndex(b => b.position.v === v && b.position.h === h);
-        if (baseIndex === -1) return; // Safety check
+        const baseIndex = basesArray.findIndex(b => b.position.v === planet.position.v && b.position.h === planet.position.h);
+        if (baseIndex === -1) return;
 
         const base = basesArray[baseIndex];
-
-        // Base damage: reduce energy by 300 ± 100 (Fortran: max0(base(j,3,jbase) - 300 + iran(100), 0))
-        const damage = 300 + (Math.random() * 200 - 100); // Random ±100
-        const wasUndamaged = base.energy === 1000; // For distress call
+        const wasUndamaged = base.energy === 1000;
+        const damage = 300 + (Math.random() * 200 - 100);
         base.energy = Math.max(0, base.energy - damage);
 
-        // Update planet.builds to reflect base energy (normalize, e.g., energy / 200)
-        planet.builds = Math.max(0, Math.floor(base.energy / 200)); // Approximate mapping
-
-        // Scoring: ±ihita (~damage * 8 + random(1000)) for damage, ±10000 for destruction
         const ihita = damage * 8 + Math.random() * 1000;
         if (player.ship.side !== side) {
-            pointsManager.addDamageToBases(ihita, player, player.ship.side); // Enemy base damage
+            pointsManager.addDamageToBases(ihita, player, player.ship.side);
         } else {
-            pointsManager.addDamageToBases(-ihita, player, player.ship.side); // Friendly base damage
+            pointsManager.addDamageToBases(-ihita, player, player.ship.side);
         }
 
-        // Distress call if base was undamaged (Fortran: iwhat = 9)
         if (wasUndamaged) {
             msg = player.settings.output === "SHORT"
                 ? `BASE DST @${coords}`
@@ -126,21 +246,18 @@ function applyNovaDamagePlanet(player: Player, planet: Planet, v: number, h: num
             });
         }
 
-        // Check for destruction
         if (base.energy <= 0) {
             destroyed = true;
-            planet.builds = 0;
+            planet.isBase = false;
             if (player.ship.side !== side) {
-                pointsManager.addDamageToBases(10000, player, player.ship.side); // Enemy base destroyed
+                pointsManager.addDamageToBases(10000, player, player.ship.side);
             } else {
-                pointsManager.addDamageToBases(-10000, player, player.ship.side); // Friendly base destroyed
+                pointsManager.addDamageToBases(-10000, player, player.ship.side);
             }
-            basesArray.splice(baseIndex, 1); // Remove from bases array
-            // Assume baskil equivalent (undocking ships) handled elsewhere
+            basesArray.splice(baseIndex, 1);
             checkEndGame();
         }
 
-        // Send hit/destruction message (Fortran: iwhat = 8 or 10)
         msg = player.settings.output === "SHORT"
             ? destroyed ? `BASE X @${coords}` : `BASE HIT -${Math.round(damage)} @${coords}`
             : destroyed
@@ -157,18 +274,15 @@ function applyNovaDamagePlanet(player: Player, planet: Planet, v: number, h: num
                     : `Base at ${formatted} was hit by a nova for ${Math.round(damage)} damage!`;
         });
     } else {
-        // Handle planet
-        planet.builds = Math.max(0, planet.builds - 3); // Fortran: locpln(j,3) = locpln(j,3) - 3
+        planet.builds = Math.max(0, planet.builds - 3);
 
-        // Check for destruction
         if (planet.builds <= 0) {
             destroyed = true;
-            pointsManager.addPlanetsDestroyed(1, player, player.ship.side); // -1000 points
+            pointsManager.addPlanetsDestroyed(1, player, player.ship.side);
             const planetIndex = planets.findIndex(p => p.position.v === v && p.position.h === h);
             if (planetIndex !== -1) {
-                planets.splice(planetIndex, 1); // Remove from planets array
+                planets.splice(planetIndex, 1);
             }
-            // Also remove from bases if there is a base at this planet's location
             const basesArray = planet.side === "FEDERATION" ? bases.federation : bases.empire;
             const baseIndex = basesArray.findIndex(base => base.position.v === v && base.position.h === h);
             if (baseIndex !== -1) {
@@ -178,7 +292,6 @@ function applyNovaDamagePlanet(player: Player, planet: Planet, v: number, h: num
             checkEndGame();
         }
 
-        // Send messages
         msg = player.settings.output === "SHORT"
             ? `PLNT HIT -3 @${coords}`
             : destroyed
@@ -204,7 +317,7 @@ function destroyShipByNova(player: Player, v: number, h: number): void {
     const name = player.ship.name ?? "Unknown";
 
     sendMessageToOthersWithFormat(player, (recipient) => {
-        const coords = ocdefCoords("ABSOLUTE", recipient.ship?.position ?? { v: 0, h: 0 }, { v, h, });
+        const coords = ocdefCoords("ABSOLUTE", recipient.ship?.position ?? { v: 0, h: 0 }, { v, h });
         return formatNovaKillMessage(name, coords, recipient.settings.output);
     });
 
