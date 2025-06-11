@@ -64,7 +64,7 @@ export function spawnRomulan(): void {
         romulan.ship.romulanStatus = { isRomulan: true, isRevealed: false, cloaked: true };
         romulan.ship.energy = 5000;
         romulan.ship.damage = 0;
-        romulan.ship.level = 0;
+        romulan.ship.shieldEnergy = 0;
 
 
         const position = findEmptyLocation();
@@ -166,15 +166,27 @@ export function updateRomulan(): void {
                             p.ship.position.h === targetPos.h &&
                             p.ship.position.v === targetPos.v
                     );
-                    if (targetPlayer) {
+                    if (targetPlayer && targetPlayer.ship) {
+                        const distance = chebyshev(romulan.ship.position, targetPlayer.ship.position);
+                        const hit = romulanPhaserDamage(distance, romulan);
+                        const powfac = targetPlayer.ship.shieldsUp ? 40 : 80; // Fortran: powfac halved if shields up
+                        const phit = 0.4; // 200 energy equivalent
+
                         sendMessageToClient(targetPlayer, "You are under Romulan phaser fire!");
-                        applyPhaserShipDamage(romulan, targetPlayer, 200);
+                        addPendingMessage(romulan, `Romulan ship ${romulan.ship.name} fires phasers at ${targetPlayer.ship.name} at ${targetPlayer.ship.position.v}-${targetPlayer.ship.position.h}!`);
+                        applyPhaserShipDamage(romulan, targetPlayer, hit, powfac, phit);
                     }
                 } else {
                     if (romulanTarget.side === 'FEDERATION' || romulanTarget.side === 'EMPIRE') {
                         const baseTarget = findBaseAt(romulanTarget.position, romulanTarget.side);
                         if (baseTarget) {
-                            applyPhaserBaseDamage(romulan, baseTarget, 200);
+                            const distance = chebyshev(romulan.ship.position, romulanTarget.position);
+
+                            const powfac = 40; // Fortran: powfac = 40 for bases
+                            const phit = 0.4; // 200 energy equivalent (matches original 200 damage)
+                            const hit = romulanPhaserDamage(distance, romulan);
+                            addPendingMessage(romulan, `Romulan ship ${romulan.ship.name} fires phasers at ${baseTarget.side} base at ${baseTarget.position.v}-${baseTarget.position.h}!`);
+                            applyPhaserBaseDamage(romulan, baseTarget, hit, powfac, phit); // Fixed TS2554
                         }
                     }
                 }
@@ -383,4 +395,12 @@ function computeRomulanMovement(
     v = Math.max(1, Math.min(GRID_HEIGHT, v));
 
     return { v, h };
+}
+
+function romulanPhaserDamage(distance: number, romulan: Player): number {
+    let baseHit = Math.pow(0.9 + 0.02 * Math.random(), distance); // Fortran: pwr(0.9–0.92, id)
+    if (romulan.ship && (romulan.ship.devices.phaser > 0 || romulan.ship.devices.computer > 0)) {
+        baseHit *= 0.8; // Fortran: hit *= 0.8 if damaged
+    }
+    return baseHit;
 }

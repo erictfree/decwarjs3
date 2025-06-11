@@ -61,7 +61,7 @@ export function captureCommand(player: Player, command: Command, done?: () => vo
         return;
     }
 
-    if (player.ship.shieldsUp && player.ship.level > 0) {
+    if (player.ship.shieldsUp && player.ship.shieldEnergy > 0) {
         sendMessageToClient(player, "CAPTURE denied: shields must be lowered.");
         done?.();
         return;

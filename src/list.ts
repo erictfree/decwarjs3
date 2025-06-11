@@ -303,7 +303,7 @@ function formatShipLine(ship: Ship, mode: OutputSetting, viewer: Player): string
     const name = ship.name ?? '??';
     let fullName = (name[0].toUpperCase() + name.slice(1).toLowerCase()).padEnd(12);
     let percent = "%";
-    const shieldPct = (ship.level / MAX_SHIELD_ENERGY) * 100;
+    const shieldPct = (ship.shieldEnergy / MAX_SHIELD_ENERGY) * 100;
     let shieldDisplay = `+${shieldPct.toFixed(0)}${percent}`.padStart(7);
 
 

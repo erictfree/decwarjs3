@@ -19,7 +19,7 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
         return;
     }
 
-    if (player.ship.shieldsUp && player.ship.level > 0) {
+    if (player.ship.shieldsUp && player.ship.shieldEnergy > 0) {
         sendMessageToClient(player, "Shields must be down to dock.");
         done?.();
         return;
@@ -70,7 +70,7 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
         const ship = player.ship;
         const wasFullyRepaired =
             ship.energy >= MAX_SHIP_ENERGY &&
-            ship.level >= MAX_SHIELD_ENERGY &&
+            ship.shieldEnergy >= MAX_SHIELD_ENERGY &&
             ship.torpedoes >= MAX_TORPEDOES &&
             ship.damage <= 0;
 
@@ -88,7 +88,7 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
         const dockedBonus = isBase ? 200 : 100;
 
         ship.energy = Math.min(MAX_SHIP_ENERGY, ship.energy + energyGain);
-        ship.level = Math.min(MAX_SHIELD_ENERGY, ship.level + shieldGain);
+        ship.shieldEnergy = Math.min(MAX_SHIELD_ENERGY, ship.shieldEnergy + shieldGain);
         ship.shieldsUp = false;
         ship.torpedoes = Math.min(MAX_TORPEDOES, ship.torpedoes + torpGain);
         ship.damage = Math.max(0, ship.damage - damageRepair - (wasAlreadyDocked ? dockedBonus : 0));

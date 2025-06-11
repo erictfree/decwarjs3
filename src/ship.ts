@@ -30,7 +30,7 @@ export class Ship {
     public position: Position;
     public energy: number;
     public shieldsUp: boolean;
-    public level: number;
+    public shieldEnergy: number;
     public name: string;
     public isDestroyed: boolean;
     public side: Side;
@@ -63,7 +63,7 @@ export class Ship {
         this.position = findEmptyLocation() || { v: 1, h: 1 };
         this.energy = MAX_SHIP_ENERGY;
         this.shieldsUp = false;
-        this.level = MAX_SHIELD_ENERGY;
+        this.shieldEnergy = MAX_SHIELD_ENERGY;
         this.docked = false;
         this.name = "Unknown";
         this.isDestroyed = false;
@@ -161,7 +161,7 @@ export class Ship {
     transferToShields(amount: number): number {
         const maxShieldEnergy = MAX_SHIELD_ENERGY;
         const availableShipEnergy = Math.max(0, this.energy);
-        const shieldRoom = Math.max(0, maxShieldEnergy - this.level);
+        const shieldRoom = Math.max(0, maxShieldEnergy - this.shieldEnergy);
         const requestedAmount = Math.max(0, amount);
 
         const transferable = Math.min(requestedAmount, availableShipEnergy, shieldRoom);
@@ -175,7 +175,7 @@ export class Ship {
             return 0;
         }
 
-        this.level += transferable;
+        this.shieldEnergy += transferable;
         this.energy -= transferable;
 
         sendOutputMessage(this.player, {
@@ -191,9 +191,9 @@ export class Ship {
         });
 
         sendOutputMessage(this.player, {
-            SHORT: `SH ${this.level}`,
-            MEDIUM: `Shield energy: ${this.level}`,
-            LONG: `Current shield reserve: ${this.level}`
+            SHORT: `SH ${this.shieldEnergy}`,
+            MEDIUM: `Shield energy: ${this.shieldEnergy}`,
+            LONG: `Current shield reserve: ${this.shieldEnergy}`
         });
 
         return transferable;
@@ -223,7 +223,7 @@ export class Ship {
             return 0;
         }
 
-        const transferable = Math.min(amount, this.level, roomInShip);
+        const transferable = Math.min(amount, this.shieldEnergy, roomInShip);
 
         if (transferable <= 0) {
             sendOutputMessage(this.player, {
@@ -235,7 +235,7 @@ export class Ship {
             return 0;
         }
 
-        this.level -= transferable;
+        this.shieldEnergy -= transferable;
         this.energy += transferable;
 
         sendOutputMessage(this.player, {
@@ -247,7 +247,7 @@ export class Ship {
     }
 
     computeShieldStrength(): string {
-        const percentage = (this.level / MAX_SHIELD_ENERGY) * 100;    //TODO SHIELD AND LEVEL?  is this correct?
+        const percentage = (this.shieldEnergy / MAX_SHIELD_ENERGY) * 100;    //TODO SHIELD AND LEVEL?  is this correct?
         const strength = Math.max(0, Math.floor(percentage));
         return strength === 100
             ? `${strength}%`
@@ -255,7 +255,7 @@ export class Ship {
     }
 
     computeShieldPercent(): number {
-        const percent = (this.level / MAX_SHIELD_ENERGY) * 100;
+        const percent = (this.shieldEnergy / MAX_SHIELD_ENERGY) * 100;
         return this.shieldsUp ? Math.round(percent) : -Math.round(percent);
     }
 

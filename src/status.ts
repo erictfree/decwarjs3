@@ -93,7 +93,7 @@ export function statusCommand(player: Player, command: Command): void {
                 break;
             }
             case 'shields': {
-                const curr = player.ship.level;
+                const curr = player.ship.shieldEnergy;
                 const pct = Math.round((curr / MAX_SHIELD_ENERGY) * 100);
                 const status = player.ship.shieldsUp ? "UP" : "DN";
                 if (mode === "SHORT") shortParts.push(`SH+${pct}/${status}`);

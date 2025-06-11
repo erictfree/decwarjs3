@@ -6,7 +6,7 @@ import { setRandomSeed } from './util/random.js';
 import { PointsManager } from "./points.js";
 import { settings } from "./settings.js";
 import { updateRomulan, maybeSpawnRomulan } from "./romulan.js";
-import { sendAllPendingMessages, sendMessageToClient } from "./communication.js";
+import { sendAllPendingMessages, sendMessageToClient, addPendingMessage } from "./communication.js";
 import net from "net";
 import { chebyshev } from "./coords.js";
 import { applyPhaserShipDamage } from "./phaser.js";
@@ -93,10 +93,17 @@ function nextTick(): boolean {
     return false;
 }
 
+function planetOrBasePhaserDamage(distance: number, target: Player): number {
+    let baseHit = Math.pow(0.9 + 0.02 * Math.random(), distance); // Fortran: pwr(0.9–0.92, id)
+    if (target.ship && (target.ship.devices.phaser > 0 || target.ship.devices.computer > 0)) {
+        baseHit *= 0.8; // Fortran: hit *= 0.8 if damaged
+    }
+    return baseHit;
+}
+
 export function performPlanetOrBaseAttacks(base: boolean = false): void {
-    const numPlayers = players.length;
     for (const planet of planets) {
-        if (planet.isBase !== base) continue; // Only process bases if base=true, planets if base=false
+        if (planet.isBase !== base) continue; // Bases if base=true, planets if base=false
 
         for (const player of players) {
             if (!player.ship) continue;
@@ -107,10 +114,14 @@ export function performPlanetOrBaseAttacks(base: boolean = false): void {
             const maxRange = base ? 4 : 2; // 4 sectors for bases, 2 for planets
             if (range > maxRange) continue;
 
-            let hit = base ? 200 / numPlayers : (50 + 30 * planet.builds) / numPlayers;
-            hit *= Math.max(0, 1 - range / (base ? 5 : 3)); // Linear damage reduction to 0 at max range + 1
+            const hit = planetOrBasePhaserDamage(range, player);
+            const powfac = player.ship.shieldsUp ? 40 : 80; // Fortran: powfac halved if shields up
+            const phit = base ? 0.4 : 0.2; // 200 energy for bases, 100 for planets
+
             if (hit > 0) {
-                applyPhaserShipDamage(planet, player, hit);
+                addPendingMessage(player, `\r\n** ALERT ** ${base ? 'Starbase' : 'Planet'} at ${planet.position.v}-${planet.position.h} opens fire!`);
+                addPendingMessage(player, `You are under automatic phaser attack from ${base ? 'enemy starbase' : 'planet'}!`);
+                applyPhaserShipDamage(planet, player, hit, powfac, phit); // Fixed TS2554
             }
         }
     }

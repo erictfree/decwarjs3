@@ -481,9 +481,6 @@ export function applyTorpedoPlanetDamage(attacker: Player, planet: Planet, n: nu
         const hita = hit * (1000 - base.energy) * 0.001; // Effective damage after shields
         base.energy = Math.max(0, Math.floor(base.energy - (hit * Math.max(base.energy * 0.001, 0.1) + 10) * 0.03));
 
-        // Apply hita to base energy (Fortran: base(j,3,nplc-2) -= hita * 0.01)
-        base.energy = Math.max(0, Math.floor(base.energy - hita * 0.01));
-
         // Add damage-based points (Fortran: tpoint(KPBDAM) += hita)
         pointsManager.addDamageToBases(hita, attacker, attacker.ship.side);
 
@@ -590,13 +587,13 @@ export function applyTorpedoShipDamage(
         return;
 
     }
-    const shieldLevel = target.ship.level;
+    const shieldLevel = target.ship.shieldEnergy;
     let finalDamage = rawDamage;
 
     if (target.ship.shieldsUp && shieldLevel > 0) {
         const { effectiveDamage, shieldLoss } = calculateShieldedDamage(rawDamage, shieldLevel, MAX_SHIELD_ENERGY);
         finalDamage = effectiveDamage;
-        target.ship.level = Math.max(0, shieldLevel - shieldLoss);
+        target.ship.shieldEnergy = Math.max(0, shieldLevel - shieldLoss);
     }
 
     if (attacker instanceof Player && attacker.ship) {

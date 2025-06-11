@@ -37,7 +37,7 @@ export function repairCommand(player: Player, command: Command, done?: () => voi
     if (
         damagedDevices.length === 0 &&
         player.ship.energy >= MAX_SHIP_ENERGY &&
-        player.ship.level >= MAX_SHIELD_ENERGY
+        player.ship.shieldEnergy >= MAX_SHIELD_ENERGY
     ) {
         sendMessageToClient(player, "All systems are fully operational. No repairs needed.");
         done?.();
@@ -71,11 +71,11 @@ export function repairCommand(player: Player, command: Command, done?: () => voi
             }
         }
 
-        if (player.ship.level < MAX_SHIELD_ENERGY) {
+        if (player.ship.shieldEnergy < MAX_SHIELD_ENERGY) {
             if (player.ship.energy >= SHIELD_REPAIR_COST) {
                 player.ship.energy -= SHIELD_REPAIR_COST;
-                const restored = Math.min(SHIELD_REPAIR_AMOUNT, MAX_SHIELD_ENERGY - player.ship.level);
-                player.ship.level += restored;
+                const restored = Math.min(SHIELD_REPAIR_AMOUNT, MAX_SHIELD_ENERGY - player.ship.shieldEnergy);
+                player.ship.shieldEnergy += restored;
                 repaired.push("shields");
             } else {
                 if (mode !== "SHORT") {

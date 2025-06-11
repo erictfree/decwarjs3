@@ -128,7 +128,7 @@ export class Player {
         const ship = this.ship;
 
         // S: shields down or <10%
-        if (ship.shieldsUp && ship.level < 0.1 * MAX_SHIELD_ENERGY) {
+        if (ship.shieldsUp && ship.shieldEnergy < 0.1 * MAX_SHIELD_ENERGY) {
             flags.push('S');
         }
 
