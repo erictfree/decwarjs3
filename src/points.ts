@@ -5,6 +5,9 @@ import { Player } from './player.js';
 import { Side, settings } from './settings.js';
 import { pointsManager } from './game.js';
 
+
+// TODO: Add points for team turns
+
 export type PointCategory =
   | 'damageToEnemies'
   | 'enemiesDestroyed'
@@ -26,6 +29,7 @@ interface Score {
 export class PointsManager {
   private sidePoints: Record<Side, Points>;
   private shipsCommissioned: Record<Side, number>;
+
 
   constructor() {
     const empty: Points = {
@@ -205,7 +209,7 @@ function formatScores(scores: Score[]): string {
   const headers = [...activeHeaders.map(h => h.label), ...fixedHeaders];
   const maxLabelLength = Math.max(...scores.map(s => s.label.length), ...headers.map(h => h.length));
   const colWidth = 15;
-  const formatNum = (n: number | undefined): string => n !== undefined ? n.toString().padStart(6) : "0".padStart(6);
+  const formatNum = (n: number | undefined): string => n !== undefined ? n.toFixed(2).toString().padStart(6) : "0".padStart(6);
 
   // Build header row
   let result = " ".repeat(maxLabelLength);

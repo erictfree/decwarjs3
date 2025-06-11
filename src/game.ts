@@ -50,59 +50,49 @@ export function generateGalaxy(seed?: string): void {
 }
 
 export function processTimeConsumingMove(player: Player) {
-    baseEnergyRegeneration(player);
-
-    performPlanetOrBaseAttacks(true);
-    performPlanetOrBaseAttacks(false);
-    updateRomulan();
-    if (settings.romulans) {
-        maybeSpawnRomulan();
+    if (!player.ship) return;
+    if (player.ship.side == "FEDERATION") {
+        settings.teamTurns.federation += 1;
+    } else if (player.ship.side == "EMPIRE") {
+        settings.teamTurns.empire += 1;
+    } else if (player.ship.side == "ROMULAN") {
+        settings.teamTurns.romulan += 1;
     }
+
+    player.stardate += 1;
+    settings.dotime += 1;
+    const numply = players.length;
+
+    // Perform periodic actions if dotime >= numply (mirrors if (dotime .lt. numply) goto 3501)
+    if (settings.dotime >= numply) {
+        settings.dotime = 0; // Reset dotime (mirrors dotime = 0)
+
+        // Periodic actions (mirrors basbld, baspha, plnatk, romdrv)
+        baseEnergyRegeneration(player); // Mirrors BASBLD
+        performPlanetOrBaseAttacks(true); // Mirrors BASPHA (enemy bases)
+        performPlanetOrBaseAttacks(false); // Mirrors PLNATK (neutral/enemy planets)
+        updateRomulan(); // Mirrors romdrv (partially)
+        if (settings.romulans) {
+            maybeSpawnRomulan(); // Mirrors romdrv (Romulan spawning)
+        }
+    }
+
     for (const player of players) {
         player.updateLifeSupport();
     }
 }
 
-function updateGameTick(): void {
-    // let ticked = nextTick();
-    // if (Math.random() < 0.5) {
-    //     ticked = true;
-    // }
-    // if (ticked)
-    //     console.log(settings.timeConsumingMoves, players.length, ticked);
-
+function updateGame(): void {
     checkForDisconnectedPlayers();
     checkForInactivity();
-
-
-
-    // if (ticked) {
-    //     // updateRomulan();
-    //     // if (settings.romulans) {
-    //     //     maybeSpawnRomulan();
-    //     // }
-    //     // performPlanetOrBaseAttacks(false);
-    //     // performPlanetOrBaseAttacks(true);
-    //     //repairAllPlayerDevices();
-    //     //repairAllBases();
-    // }
-
     if (settings.blackholes) {
         checkForBlackholes();
     }
 
-    setTimeout(updateGameTick, 1000);
+    setTimeout(updateGame, 1000);
 }
-updateGameTick();
+updateGame();
 
-function nextTick(): boolean {
-    if (settings.timeConsumingMoves > players.length) {
-        settings.timeConsumingMoves = 0;
-        settings.stardate += 1;
-        return true;
-    }
-    return false;
-}
 
 function checkForPendingMessages(): void {
     sendAllPendingMessages();

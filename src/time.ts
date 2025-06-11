@@ -19,12 +19,12 @@ export function timeCommand(player: Player): void {
     // Galactic stardate is seconds since game start divided by 100, plus random 2 digits at the end
     //const baseStardate = secsSinceGameStart / 100;
 
-    sendMessageToClient(player, "TIME REPORT:");
-    sendMessageToClient(player, timeLine("GALACTIC STARDATE", formatDuration(stardate)));
-    sendMessageToClient(player, timeLine("SINCE GAME START", formatDuration(secsSinceGameStart)));
-    sendMessageToClient(player, timeLine("SINCE YOU JOINED", formatDuration(secsSinceJoin)));
-    sendMessageToClient(player, timeLine("SERVER UPTIME", formatDuration(processUptimeSec)));
-    sendMessageToClient(player, timeLine("CLOCK TIME (UTC)", currentTime));
+    sendMessageToClient(player, timeLine("Stardate:", player.stardate));
+    sendMessageToClient(player, timeLine("Game's elapsed time:", formatDuration(secsSinceGameStart)));
+    sendMessageToClient(player, timeLine("Ship's elapsed time:", formatDuration(secsSinceJoin)));
+    sendMessageToClient(player, timeLine("Current time (UTC):", currentTime));
+    sendMessageToClient(player, timeLine("Job's total run time:", formatDuration(processUptimeSec)));
+    sendMessageToClient(player, "");
 }
 
 export function formatDuration(totalSeconds: number): string {

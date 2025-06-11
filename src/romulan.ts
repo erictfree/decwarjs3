@@ -18,6 +18,7 @@ import { applyPhaserShipDamage, applyPhaserBaseDamage } from './phaser.js';
 import { applyTorpedoShipDamage, applyTorpedoBaseDamage } from './torpedo.js';
 import { bresenhamLine, chebyshev, findEmptyLocation, findObjectAtPosition } from './coords.js';
 import { Planet } from './planet.js';
+import { pointsManager } from './game.js';
 
 const TARGET_RANGE = 20;
 const ATTACK_CHANCE = 1 / 3;
@@ -55,6 +56,8 @@ export function maybeSpawnRomulan(): void {
 
 export function spawnRomulan(): void {
     if (romulan && romulan.ship) return;
+
+    pointsManager.incrementShipsCommissioned('ROMULAN');
 
     romulan = new Player(new NullSocket());
     romulan.settings.name = 'ROMULAN';

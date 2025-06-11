@@ -9,7 +9,6 @@ import { activateCommand } from './activate.js';
 import { gripeCommand } from './gripe.js';
 import { helpCommand } from './help.js';
 import { newsCommand } from './news.js';
-//import { pointsCommand } from './points.js';
 import { timeCommand } from './time.js';
 import { usersCommand } from './users.js';
 import { quitCommand } from './quit.js';
@@ -26,6 +25,7 @@ import { sendEmail } from './util/send-email.js';
 import { addEmailToMailchimp } from './util/email.js';
 import { setRandomSeed } from './util/random.js';
 import { players } from './game.js';
+import { pointsManager } from './game.js';
 
 // Map of pre-game command keys to their handlers
 const pgCommands = new Map<string, CommandHandler>([
@@ -371,6 +371,11 @@ export function promptForShip(player: Player, iter: number): void {
         pl.ship.name = actualShipName;
         pl.ship.side = side;
         pl.ship.position = findEmptyLocation() || { v: 1, h: 1 };
+        if (side == "FEDERATION") {
+            pointsManager.incrementShipsCommissioned('FEDERATION');
+        } else if (side == "EMPIRE") {
+            pointsManager.incrementShipsCommissioned('EMPIRE');
+        }
 
         players.push(player);
         sendMessageToClient(player, `\r\nDECWARJS game #${settings.gameNumber}, ${settings.tournamentSeed}\r\n\r\n`, false, true);

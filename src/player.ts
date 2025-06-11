@@ -17,6 +17,7 @@ const suffocationMessages = [
 export class Player {
     public auth: AuthSession;
     public joinTime: number;
+    public stardate: number;
     public lastActivity: number;
     public socket: Socket;
     public isAdmin: boolean;
@@ -68,6 +69,7 @@ export class Player {
         this.socket = socket;
         this.isAdmin = false;
         this.joinTime = Date.now();
+        this.stardate = 0;
         this.lastActivity = Date.now();
         this.isOnHold = false;
         this.inputBuffer = '';
