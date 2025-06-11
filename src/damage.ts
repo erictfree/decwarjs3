@@ -46,18 +46,19 @@ export function damagesCommand(player: Player, command: Command): void {
         if (matchedDevice) {
             const { name, key } = matchedDevice[1];
             const damage = devices[key as keyof typeof devices];
+            //const damage = Math.random() * 300;  test
             if ((damage <= 0 && showAll) || damage > 0)
                 output.push(`${name.padEnd(11)}${damage.toFixed(1).padStart(7)}`);
             if (damage > 0) hasDamage = true;
         }
     }
     if (!hasDamage) {
-        sendMessageToClient(player, 'All systems operational.');
+        sendMessageToClient(player, 'All systems operational.\r\n');
         return;
     } else {
         // Output header and aligned lines
-        output.unshift('Device       Damage');
         output.unshift('');
+        output.unshift('Device       Damage');
         output.push('');
         output.forEach(line => sendMessageToClient(player, line));
     }
