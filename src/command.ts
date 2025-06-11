@@ -36,6 +36,7 @@ import { clearCommand } from './util/clear.js';
 import { sendMessageToClient } from './communication.js';
 import { oveCommand } from './ove.js';
 import { tweakCommand } from './tweak.js';
+import { matchesPattern } from './util/util.js';
 
 interface TokenizedInput {
     tokens: string[][];
@@ -60,44 +61,44 @@ export class Command {
 // --- Command Registry ---
 
 const decwarCommands = new Map<string, CommandHandler>([
-    ["BA", basesCommand],
-    ["BU", buildCommand],
-    ["CA", captureCommand],
-    ["CL", clearCommand],
-    ["DA", damagesCommand],
-    ["DO", dockCommand],
+    ["BAses", basesCommand],
+    ["BUild", buildCommand],
+    ["CApture", captureCommand],
+    ["CLear", clearCommand],
+    ["DAmages", damagesCommand],
+    ["DOck", dockCommand],
     // //["UD", defaultHandler],
-    ["EN", energyCommand],
-    ["GR", gripeCommand],
-    ["H", helpCommand],
+    ["Energy", energyCommand],
+    ["GRipe", gripeCommand],
+    ["Help", helpCommand],
     ["?", helpCommand],
-    ["IM", impulseCommand],
-    ["LI", listCommand],
-    ["M", moveCommand],
-    ["NE", newsCommand],
-    ["PH", phaserCommand],
-    ["PL", planetsCommand],
-    ["PO", pointsCommand],
-    ["PR", promoteCommand],
-    ["Q", quitCommand],
-    ["RA", radioCommand],
-    ["RE", repairCommand],
-    ["RS", restartCommand],
-    ["SC", scanCommand],
-    ["SE", setCommand],
-    ["SH", shieldCommand],
-    ["SR", shortRangeScanCommand],
-    ["ST", statusCommand],
-    ["SU", summaryCommand],
-    ["TA", targetsCommand],
-    ["TE", tellCommand],
-    ["TI", timeCommand],
-    ["TO", torpedoCommand],
-    ["TR", tractorCommand],
-    ["TY", typeCommand],
-    ["U", usersCommand],
-    ["O", oveCommand],
-    ["TW", tweakCommand]
+    ["Impulse", impulseCommand],
+    ["LIst", listCommand],
+    ["Move", moveCommand],
+    ["News", newsCommand],
+    ["PHasers", phaserCommand],
+    ["PLanets", planetsCommand],
+    ["POints", pointsCommand],
+    ["PRomote", promoteCommand],
+    ["Quit", quitCommand],
+    ["RAdio", radioCommand],
+    ["REpair", repairCommand],
+    ["RStart", restartCommand],
+    ["SCan", scanCommand],
+    ["SEt", setCommand],
+    ["SHield", shieldCommand],
+    ["SRscan", shortRangeScanCommand],
+    ["STatus", statusCommand],
+    ["SUmmary", summaryCommand],
+    ["TArgets", targetsCommand],
+    ["TEll", tellCommand],
+    ["TIme", timeCommand],
+    ["TOrpedo", torpedoCommand],
+    ["TRactor", tractorCommand],
+    ["TYpe", typeCommand],
+    ["Users", usersCommand],
+    ["Over", oveCommand],
+    ["TWeak", tweakCommand]
 ]);
 
 // --- Tokenization ---
@@ -148,7 +149,7 @@ export function processNextCommand(player: Player): void {
     const commandObject = new Command(commandKey, tokens.slice(1), raw);
 
     const matchedCommand = [...decwarCommands.entries()].find(
-        ([key]) => commandKey.startsWith(key)
+        ([key]) => matchesPattern(commandKey, key)
     )?.[1];
 
     if (!matchedCommand) {
