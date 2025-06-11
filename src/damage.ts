@@ -19,7 +19,7 @@ export function damagesCommand(player: Player, command: Command): void {
         'COMPUTER': { name: 'Computer', key: 'computer', minLength: 1 },
         'RADIO': { name: 'Radio', key: 'radio', minLength: 1 },
         'TRACTOR': { name: 'Tractor', key: 'tractor', minLength: 2 },
-        'LIFESUPPORT': { name: 'Life support', key: 'lifeSupport', minLength: 1 }
+        'LIFESUPPORT': { name: 'Life Sup', key: 'lifeSupport', minLength: 1 }
     };
 
     // Deduplicate args array to avoid duplicate device reports
@@ -47,7 +47,7 @@ export function damagesCommand(player: Player, command: Command): void {
             const { name, key } = matchedDevice[1];
             const damage = devices[key as keyof typeof devices];
             if ((damage <= 0 && showAll) || damage > 0)
-                output.push(`${name.padEnd(16)}${damage.toFixed(0).padStart(6)}`);
+                output.push(`${name.padEnd(11)}${damage.toFixed(1).padStart(7)}`);
             if (damage > 0) hasDamage = true;
         }
     }
@@ -56,7 +56,9 @@ export function damagesCommand(player: Player, command: Command): void {
         return;
     } else {
         // Output header and aligned lines
-        sendMessageToClient(player, 'Device           Damage');
+        output.unshift('Device       Damage');
+        output.unshift('');
+        output.push('');
         output.forEach(line => sendMessageToClient(player, line));
     }
     return;

@@ -162,8 +162,6 @@ export function applyPhaserShipDamage(source: Player | Planet, target: Player, d
     if (source instanceof Player && !source.ship) return;
     if (!target.ship) return;
 
-    console.log("applyPhaserShipDamage", damage, powfac, phit);
-
     const sourceType = source instanceof Player ? "Player" : "Planet";
     const sourceSide = source instanceof Player ? source.ship!.side : source.side;  //TODO: check if this is correct
     const sourcePos = source instanceof Player ? source.ship!.position : source.position;
@@ -190,8 +188,6 @@ export function applyPhaserShipDamage(source: Player | Planet, target: Player, d
     } else {
         effectiveDamage = hita * powfac * phit;
     }
-
-    console.log("effectiveDamage", effectiveDamage);
 
     // Apply damage (Fortran: block 500)
     target.ship.energy = Math.max(0, target.ship.energy - effectiveDamage);

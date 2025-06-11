@@ -4,7 +4,7 @@ import { Player } from "./player.js";
 import { Star } from "./star.js";
 import { setRandomSeed } from './util/random.js';
 import { PointsManager } from "./points.js";
-import { settings } from "./settings.js";
+import { settings, INACTIVITY_TIMEOUT, INITIAL_BASE_STRENGTH } from "./settings.js";
 import { updateRomulan, maybeSpawnRomulan } from "./romulan.js";
 import { sendAllPendingMessages, sendMessageToClient, addPendingMessage } from "./communication.js";
 import net from "net";
@@ -58,10 +58,11 @@ function updateGameTick(): void {
     //     console.log(settings.timeConsumingMoves, players.length, ticked);
 
     checkForDisconnectedPlayers();
+    checkForInactivity();
 
-    // for (const player of players) {
-    //     //player.updateLifeSupport(); //TODO
-    // }
+    for (const player of players) {
+        player.updateLifeSupport();
+    }
 
     if (ticked) {
         updateRomulan();
@@ -70,16 +71,14 @@ function updateGameTick(): void {
         }
         performPlanetOrBaseAttacks(false);
         performPlanetOrBaseAttacks(true);
-        //energyRegeneration();
         //repairAllPlayerDevices();
         //repairAllBases();
     }
 
-    //checkForNova();
     if (settings.blackholes) {
         checkForBlackholes();
     }
-    //checkForInactivity();
+
     setTimeout(updateGameTick, 1000);
 }
 updateGameTick();
@@ -91,6 +90,46 @@ function nextTick(): boolean {
         return true;
     }
     return false;
+}
+
+function checkForPendingMessages(): void {
+    sendAllPendingMessages();
+    setTimeout(checkForPendingMessages, 30);
+}
+checkForPendingMessages();
+
+
+function checkForInactivity() {
+    for (const player of players) {
+        if (!player.ship) continue;
+
+        const inactiveTime = Date.now() - player.lastActivity;
+
+        if (inactiveTime >= INACTIVITY_TIMEOUT) {
+            sendMessageToClient(player, "Captain, you have been inactive for too long. You have been removed from the game.");
+            removePlayerFromGame(player);
+
+        }
+    }
+}
+
+function baseEnergyRegeneration(player: Player): void {
+    // if player is romulan get both bases, otherwise get enemy bases
+    let n = 0;
+    let basestoUpdate: Planet[] = [];
+    if (player.ship && player.ship.side === "ROMULAN") {
+        basestoUpdate = [...bases.federation, ...bases.empire];
+        n = Math.floor(50 / (players.length + 1));
+    } else if (player.ship) {
+        const side = player.ship.side;
+        basestoUpdate = (player.ship.side === "FEDERATION" ? bases.empire : bases.federation);
+        // Count number of players on the same side as the player
+        const numSidePlayers = players.filter(p => p.ship && p.ship.side === side).length;
+        n = Math.floor(25 / (numSidePlayers || 1));
+    }
+    for (const base of basestoUpdate) {
+        base.energy = Math.min(base.energy + n, INITIAL_BASE_STRENGTH);
+    }
 }
 
 function planetOrBasePhaserDamage(distance: number, target: Player): number {
@@ -126,12 +165,6 @@ export function performPlanetOrBaseAttacks(base: boolean = false): void {
         }
     }
 }
-
-function checkForPendingMessages(): void {
-    sendAllPendingMessages();
-    setTimeout(checkForPendingMessages, 30);
-}
-checkForPendingMessages();
 
 function checkForDisconnectedPlayers() {
     for (const player of players) {

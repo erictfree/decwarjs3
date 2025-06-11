@@ -1,18 +1,18 @@
 import { Socket } from 'net';
 import { Ship } from './ship.js';
 import { sendMessageToClient } from './communication.js';
-import { players } from './game.js';
+import { players, removePlayerFromGame } from './game.js';
 import { Side, ScanSetting, PromptSetting, OCDEF, ICDEF, OutputSetting, MAX_SHIELD_ENERGY } from './settings.js';
 import { AuthSession } from './util/auth.js';
 import { findEmptyLocation } from './coords.js';
 
-// const suffocationMessages = [
-//     "Life support failed. Your crew drew their final breaths and fell silent.",
-//     "Oxygen tanks empty. The ship now drifts, silent and lifeless.",
-//     "You hear one final gasp... then only the hum of dead systems remains.",
-//     "Without life support, the crew could not survive. All hands lost.",
-//     "No air. No hope. Just a hulk in space, and the echo of a failed mission."
-// ];
+const suffocationMessages = [
+    "Life support failed. Your crew drew their final breaths and fell silent.",
+    "Oxygen tanks empty. The ship now drifts, silent and lifeless.",
+    "You hear one final gasp... then only the hum of dead systems remains.",
+    "Without life support, the crew could not survive. All hands lost.",
+    "No air. No hope. Just a hulk in space, and the echo of a failed mission."
+];
 
 export class Player {
     public auth: AuthSession;
@@ -189,8 +189,8 @@ export class Player {
         }
     }
 
-    /*
     updateLifeSupport(): void {
+        if (!this.ship) return;
         const damage = this.ship.devices.lifeSupport;
 
         if (damage >= 300) {
@@ -204,7 +204,7 @@ export class Player {
                     sendMessageToClient(this, `Life support failure: ${this.ship.lifeSupportFailureTimer} stardates remaining.`);
                 } else {
                     sendMessageToClient(this, suffocationMessages[Math.floor(Math.random() * suffocationMessages.length)]);
-                    putPlayerInLimbo(this, true);
+                    removePlayerFromGame(this);
                 }
             }
         } else {
@@ -215,7 +215,7 @@ export class Player {
             this.ship.lifeSupportFailureTimer = null;
         }
     }
-*/
+
     addToHistory(line: string): void {
         const trimmed = line.trim();
         if (trimmed.length === 0) return;
