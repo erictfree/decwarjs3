@@ -49,31 +49,43 @@ export function generateGalaxy(seed?: string): void {
     settings.generated = true;
 }
 
-function updateGameTick(): void {
-    let ticked = nextTick();
-    if (Math.random() < 0.5) {
-        ticked = true;
+export function processTimeConsumingMove(player: Player) {
+    baseEnergyRegeneration(player);
+
+    performPlanetOrBaseAttacks(true);
+    performPlanetOrBaseAttacks(false);
+    updateRomulan();
+    if (settings.romulans) {
+        maybeSpawnRomulan();
     }
+    for (const player of players) {
+        player.updateLifeSupport();
+    }
+}
+
+function updateGameTick(): void {
+    // let ticked = nextTick();
+    // if (Math.random() < 0.5) {
+    //     ticked = true;
+    // }
     // if (ticked)
     //     console.log(settings.timeConsumingMoves, players.length, ticked);
 
     checkForDisconnectedPlayers();
     checkForInactivity();
 
-    for (const player of players) {
-        player.updateLifeSupport();
-    }
 
-    if (ticked) {
-        updateRomulan();
-        if (settings.romulans) {
-            maybeSpawnRomulan();
-        }
-        performPlanetOrBaseAttacks(false);
-        performPlanetOrBaseAttacks(true);
-        //repairAllPlayerDevices();
-        //repairAllBases();
-    }
+
+    // if (ticked) {
+    //     // updateRomulan();
+    //     // if (settings.romulans) {
+    //     //     maybeSpawnRomulan();
+    //     // }
+    //     // performPlanetOrBaseAttacks(false);
+    //     // performPlanetOrBaseAttacks(true);
+    //     //repairAllPlayerDevices();
+    //     //repairAllBases();
+    // }
 
     if (settings.blackholes) {
         checkForBlackholes();
@@ -294,3 +306,4 @@ export function removePlayerFromGame(player: Player): void {
 //     const maxRange = 4; // or 2 for planets
 //     return minProb + (maxProb - minProb) * (1 - distance / maxRange);
 // }
+

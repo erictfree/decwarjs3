@@ -37,6 +37,7 @@ import { sendMessageToClient } from './communication.js';
 import { oveCommand } from './ove.js';
 import { tweakCommand } from './tweak.js';
 import { matchesPattern } from './util/util.js';
+import { processTimeConsumingMove } from './game.js';
 
 interface TokenizedInput {
     tokens: string[][];
@@ -170,6 +171,7 @@ export function processNextCommand(player: Player): void {
             //gameSettings.timeConsumingMoves++;  PUT BACK TODO
             player.processingCommand = false;
             processNextCommand(player);
+            processTimeConsumingMove(player);
         });
     }
 }
