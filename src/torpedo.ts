@@ -80,7 +80,6 @@ function traceTorpedoPath(player: Player, start: Point, target: Point): TorpedoC
     }
 
     const { v: endV, h: endH } = getPointTenStepsAway(start, target);
-    console.log(start, target, { v: endV, h: endH });
     const points = bresenhamLine(start.v, start.h, endV, endH);
     let skipFirst = true;
 
@@ -105,10 +104,8 @@ function traceTorpedoPath(player: Player, start: Point, target: Point): TorpedoC
         if (planet) return { type: "planet", planet: planet };
 
         // Check for star
-        console.log("checking " + v + " " + h);
         const star = stars.find(star => star.position.v === v && star.position.h === h);
         if (star) {
-            console.log("found star", star.position);
             return { type: "star", star: star };
         }
 
@@ -288,8 +285,6 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
         return;
     }
 
-    console.log(targets);
-
     for (let i = 0; i < targets.length; i++) {
         const target = targets[i];
         if (target.v === player.ship.position.v && target.h === player.ship.position.h) {
@@ -309,12 +304,10 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
         let fired = false;
         switch (collision?.type) {
             case "ship":
-                console.log("TORPEDO OF SHIP", collision.player.ship?.position);
                 torpedoShip(player, collision.player, i + 1);
                 fired = true;
                 break;
             case "planet":
-                console.log("TORPEDO OF PLANET", collision.planet.position);
                 if (collision.planet.isBase) {
                     applyTorpedoPlanetDamage(player, collision.planet, i + 1);
                 } else {
@@ -323,7 +316,6 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 fired = true;
                 break;
             case "star":
-                console.log("TORPEDO OF STAR", target.v, target.h);
                 sendMessageToClient(player, formatTorpedoExplosion(player, collision.star.position.v, collision.star.position.h));
                 if (Math.random() > 0.8) {
                     triggerNovaAt(player, collision.star.position.v, collision.star.position.h);
@@ -331,7 +323,6 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 fired = true;
                 break;
             case "blackhole":
-                console.log("TORPEDO OF BLACKHOLE", target.v, target.h);
                 sendMessageToClient(player, formatTorpedoLostInVoid(player, collision.blackhole.position.v, collision.blackhole.position.h));
                 fired = true;
                 break;
@@ -568,7 +559,6 @@ export function applyTorpedoBaseDamage(attacker: Player, base: Planet, n: number
     if (base.energy <= 0 || (isCritical && randomKill)) {
         const baseList = base.side === "FEDERATION" ? bases.federation : bases.empire;
         const index = baseList.indexOf(base);
-        console.log("index: " + index);
         if (index !== -1) baseList.splice(index, 1);
         //removeFromMemory(base); TODO
         pointsManager.addBasesBuilt(1, attacker, attacker.ship.side);

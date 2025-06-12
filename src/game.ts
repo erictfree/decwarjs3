@@ -145,6 +145,9 @@ function planetOrBasePhaserDamage(distance: number, target: Player): number {
 export function performPlanetOrBaseAttacks(base: boolean = false): void {
     for (const planet of planets) {
         if (planet.isBase !== base) continue; // Bases if base=true, planets if base=false
+        if (planet.side === "NEUTRAL") {
+            if (!base && Math.random() < 0.5) continue;
+        }
 
         for (const player of players) {
             if (!player.ship) continue;
@@ -249,18 +252,6 @@ export function checkEndGame(): void {
     }
 }
 
-/*
-
-endgm0	"THE WAR IS OVER!!!"	Generic endgame banner
-endgm1	"The entire known galaxy has been depopulated."	Everyone destroyed (stalemate)
-endgm3	"The Klingon Empire is VICTORIOUS!!!"	Empire wins
-endgm4	"The Federation has successfully repelled the Klingon hordes!!"	Federation wins
-endgm5	"Please proceed to the nearest Klingon slave planet."	Federation defeat (player message)
-endgm6	"Congratulations. Freedom again reigns the galaxy."	Federation win (player message)
-endgm7	"The Empire salutes you. Begin slave operations immediately."	Empire win (player message)
-endgm8	"The Empire has fallen. Initiate self-destruction procedure."
-
-    */
 
 export function checkForBlackholes(): void {
     for (const player of players) {
