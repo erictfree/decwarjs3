@@ -5,31 +5,22 @@ import { Player } from './player.js';
 import { Side, settings } from './settings.js';
 import { pointsManager } from './game.js';
 
-
-// TODO: Add points for team turns
-
+// PointsManager is assumed to be in a separate file (game.js), but included here for completeness
 export type PointCategory =
   | 'damageToEnemies'
   | 'enemiesDestroyed'
   | 'damageToBases'
   | 'planetsCaptured'
-  | 'basesBuilt' // Used for both building and destroying bases
+  | 'basesBuilt'
   | 'damageToRomulans'
   | 'starsDestroyed'
   | 'planetsDestroyed';
 
 type Points = Record<PointCategory, number>;
 
-interface Score {
-  label: string;
-  points: Points;
-  ships?: number;
-}
-
 export class PointsManager {
   private sidePoints: Record<Side, Points>;
   private shipsCommissioned: Record<Side, number>;
-
 
   constructor() {
     const empty: Points = {
@@ -46,7 +37,7 @@ export class PointsManager {
       FEDERATION: { ...empty },
       EMPIRE: { ...empty },
       ROMULAN: { ...empty },
-      NEUTRAL: { ...empty }, // Unused but kept for consistency
+      NEUTRAL: { ...empty },
     };
     this.shipsCommissioned = {
       FEDERATION: 0,
@@ -57,10 +48,20 @@ export class PointsManager {
   }
 
   private add(category: PointCategory, amount: number, player: Player | undefined, side: Side): void {
+    console.log(amount, player?.ship?.name, side);
     if (player) {
       player.points[category] += amount;
     }
-    this.sidePoints[side][category] += amount;
+    if (side == "FEDERATION") {
+      this.sidePoints.FEDERATION[category] += amount;
+      return;
+    } else if (side == "EMPIRE") {
+      this.sidePoints.EMPIRE[category] += amount;
+      return;
+    } else if (side == "ROMULAN") {
+      this.sidePoints.ROMULAN[category] += amount;
+      return;
+    }
   }
 
   addDamageToEnemies(amount: number, player: Player | undefined, side: Side): void {
@@ -80,7 +81,7 @@ export class PointsManager {
   }
 
   addBasesBuilt(amount: number, player: Player | undefined, side: Side): void {
-    this.add('basesBuilt', amount, player, side); // Also used for base destruction
+    this.add('basesBuilt', amount, player, side);
   }
 
   addDamageToRomulans(amount: number, player: Player | undefined, side: Side): void {
@@ -108,13 +109,22 @@ export class PointsManager {
   }
 }
 
+
+// Types for points command
+interface Score {
+  label: string;
+  points: Points;
+  ships: number;
+  side?: Side; // Tracks side for team scores
+}
+
 export function pointsCommand(player: Player, command: Command): void {
-  if (player.ship === null) {
+  if (!player.ship) {
     sendMessageToClient(player, "You must be in a ship to use this command.");
     return;
   }
 
-  const keywords = [];
+  const keywords: string[] = [];
   const filters = ["Me", "I", "Federation", "Human", "Empire", "Klingon", "Romulan", "All"];
 
   for (const arg of command.args) {
@@ -134,82 +144,90 @@ export function pointsCommand(player: Player, command: Command): void {
 
   const scores: Score[] = [];
 
-  if (keywords.includes("ALL") || keywords.includes("ME") || keywords.includes("I")) {
+  // Default to individual score if no keywords
+  if (keywords.length === 0 || keywords.includes("ALL") || keywords.includes("ME") || keywords.includes("I")) {
     scores.push({
       label: player.ship.name,
       points: player.points,
-      ships: 1, // Individual player has 1 ship
+      ships: 1,
+      side: player.ship.side
     });
   }
 
+  // Federation score
   if (keywords.includes("ALL") || keywords.includes("FEDERATION") || keywords.includes("HUMAN")) {
     scores.push({
       label: "FEDERATION",
       points: pointsManager.getPointsForSide("FEDERATION"),
       ships: pointsManager.getShipsCommissioned("FEDERATION"),
+      side: "FEDERATION"
     });
   }
 
+  // Empire score
   if (keywords.includes("ALL") || keywords.includes("EMPIRE") || keywords.includes("KLINGON")) {
     scores.push({
       label: "EMPIRE",
       points: pointsManager.getPointsForSide("EMPIRE"),
       ships: pointsManager.getShipsCommissioned("EMPIRE"),
+      side: "EMPIRE"
     });
   }
 
+  // Romulan score
   if (keywords.includes("ALL") || keywords.includes("ROMULAN")) {
     scores.push({
       label: "ROMULAN",
       points: pointsManager.getPointsForSide("ROMULAN"),
       ships: pointsManager.getShipsCommissioned("ROMULAN"),
+      side: "ROMULAN"
     });
   }
 
-  const output = formatScores(scores);
+  const output = formatScores(scores, player);
   sendMessageToClient(player, output);
 }
 
-function formatScores(scores: Score[]): string {
+function formatScores(scores: Score[], player: Player): string {
   if (scores.length < 1 || scores.length > 4) {
     return "";
   }
 
-  // Define scaling factors per DECWAR .POINTS help text
+  // Scaling factors per DECWAR help text
   const pointScales: Record<PointCategory, number> = {
-    damageToEnemies: 1,    // Direct damage value
-    enemiesDestroyed: 500, // 500 points per enemy
-    damageToBases: 1,      // Direct damage value
-    planetsCaptured: 100,  // 100 points per planet
-    basesBuilt: 1000,      // 1000 points per base built or destroyed
-    damageToRomulans: 1,   // Direct damage value
-    starsDestroyed: -50,   // -50 points per star
-    planetsDestroyed: -100 // -100 points per planet
+    damageToEnemies: 1,
+    enemiesDestroyed: 500,
+    damageToBases: 1,
+    planetsCaptured: 100,
+    basesBuilt: 1000,
+    damageToRomulans: 1,
+    starsDestroyed: -50,
+    planetsDestroyed: -100
   };
 
-  // Define point-related headers
+  // Point-related headers
   const pointHeaders: { label: string; key: keyof Points }[] = [
     { label: "Damage to enemies", key: "damageToEnemies" },
     { label: "Enemies destroyed", key: "enemiesDestroyed" },
     { label: "Damage to bases", key: "damageToBases" },
     { label: "Planets captured", key: "planetsCaptured" },
-    { label: "Bases built", key: "basesBuilt" }, // or "Bases destroyed"
+    { label: "Bases built", key: "basesBuilt" },
     { label: "Damage to Romulans", key: "damageToRomulans" },
     { label: "Stars destroyed", key: "starsDestroyed" },
-    { label: "Planets destroyed", key: "planetsDestroyed" },
+    { label: "Planets destroyed", key: "planetsDestroyed" }
   ];
 
-  // Filter headers to only those with at least one non-zero value
+  // Filter headers with non-zero values
   const activeHeaders = pointHeaders.filter(header =>
     scores.some(score => score.points[header.key] !== 0)
   );
 
-  // Always include these headers
+  // Fixed headers
   const fixedHeaders = ["", "Total points:", "", "Number of ships:", "Pts. / player:", "Pts. / stardate:"];
   const headers = [...activeHeaders.map(h => h.label), ...fixedHeaders];
   const maxLabelLength = Math.max(...scores.map(s => s.label.length), ...headers.map(h => h.length));
   const colWidth = 15;
-  const formatNum = (n: number | undefined): string => n !== undefined ? n.toFixed(2).toString().padStart(6) : "0".padStart(6);
+  const formatNum = (n: number): string => n.toFixed(0).padStart(6); // DECWAR uses integers
 
   // Build header row
   let result = " ".repeat(maxLabelLength);
@@ -228,24 +246,37 @@ function formatScores(scores: Score[]): string {
     for (const score of scores) {
       let value: string;
       switch (header) {
-        case "Total points:":
-          value = formatNum(
-            activeHeaders.reduce((sum, h) => sum + score.points[h.key] * pointScales[h.key], 0)
-          );
+        case "Total points:": {
+          const total = activeHeaders.reduce((sum, h) => sum + score.points[h.key] * pointScales[h.key], 0);
+          value = formatNum(total);
           break;
-        case "Number of ships:":
+        }
+        case "Number of ships:": {
           value = formatNum(score.ships);
           break;
-        case "Pts. / player:":
-          value = formatNum(
-            score.ships ? activeHeaders.reduce((sum, h) => sum + score.points[h.key] * pointScales[h.key], 0) / score.ships : 0
-          );
+        }
+        case "Pts. / player:": {
+          const total = activeHeaders.reduce((sum, h) => sum + score.points[h.key] * pointScales[h.key], 0);
+          const ships = score.ships;
+          value = formatNum(ships > 0 ? Math.floor(total / ships) : 0); // Integer division
           break;
-        case "Pts. / stardate:":
-          value = formatNum(
-            settings.stardate ? activeHeaders.reduce((sum, h) => sum + score.points[h.key] * pointScales[h.key], 0) / settings.stardate : 0
-          );
+        }
+        case "Pts. / stardate:": {
+          const total = activeHeaders.reduce((sum, h) => sum + score.points[h.key] * pointScales[h.key], 0);
+          let turns: number;
+          if (score.side && score.side === player.ship?.side && score.ships === 1) {
+            // Individual player
+            turns = player.stardate;
+          } else if (score.side) {
+            // Team
+            const sideKey = score.side.toLowerCase() as keyof typeof settings.teamTurns;
+            turns = settings.teamTurns[sideKey] || 0;
+          } else {
+            turns = 0;
+          }
+          value = formatNum(turns > 0 ? Math.floor(total / turns) : 0); // Integer division
           break;
+        }
         default: {
           const pointHeader = activeHeaders.find(h => h.label === header);
           value = pointHeader ? formatNum(score.points[pointHeader.key] * pointScales[pointHeader.key]) : "0".padStart(6);

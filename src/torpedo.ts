@@ -22,21 +22,55 @@ import { disconnectTractorWithReason } from './tractor.js';
 import { players, bases, planets, stars, blackholes, pointsManager, removePlayerFromGame, checkEndGame } from './game.js';
 import { handleUndockForAllShipsAfterPortDestruction, attemptDisplaceFromImpact } from './ship.js';
 import { triggerNovaAt } from './nova.js';
+import { Star } from './star.js';
+import { Blackhole } from './blackhole.js';
 
 const TORPEDO_MIN_HIT = 4000;
 const TORPEDO_MAX_HIT = 8000;
 
-type Point = { v: number; h: number };
-
 type TorpedoCollision =
     | { type: "ship"; player: Player }
     | { type: "planet"; planet: Planet }
-    | { type: "star" }
-    | { type: "blackhole" }
+    | { type: "star"; star: Star }
+    | { type: "blackhole"; blackhole: Blackhole }
     | { type: "target"; point: Point } // reached target with no collision
     | { type: "boundary"; point: Point } // reached grid boundary
     | null;
 
+type Point = { v: number; h: number };
+
+function getPointTenStepsAway(start: Point, end: Point): Point {
+    // Direction vector from start to end
+    const dh = end.h - start.h; // Δh
+    const dv = end.v - start.v; // Δv
+
+    // Euclidean distance (magnitude of direction vector)
+    const magnitude = Math.sqrt(dh * dh + dv * dv);
+
+    if (magnitude === 0) {
+        // If start and end are the same, return start
+        return { v: start.v, h: start.h };
+    }
+
+    // Normalize direction vector
+    const unitH = dh / magnitude;
+    const unitV = dv / magnitude;
+
+    // Move 10 steps along the direction
+    const steps = 10;
+    let newH = start.h + unitH * steps;
+    let newV = start.v + unitV * steps;
+
+    // Round to nearest grid point (integer coordinates)
+    newH = Math.round(newH);
+    newV = Math.round(newV);
+
+    // Clamp to grid boundaries
+    newH = Math.max(1, Math.min(GRID_WIDTH, newH));
+    newV = Math.max(1, Math.min(GRID_HEIGHT, newV));
+
+    return { v: newV, h: newH };
+}
 
 function traceTorpedoPath(player: Player, start: Point, target: Point): TorpedoCollision {
 
@@ -45,37 +79,8 @@ function traceTorpedoPath(player: Player, start: Point, target: Point): TorpedoC
         return null;
     }
 
-    // Calculate direction vector
-    const dv = target.v - start.v;
-    const dh = target.h - start.h;
-
-    // If start and target are the same, return the point
-    if (dv === 0 && dh === 0) {
-        return { type: "target", point: target }; // Already validated as in-bounds
-    }
-
-    // Find the parameter t where the line exits the grid
-    const tMinV = dv !== 0 ? (1 - start.v) / dv : Infinity;
-    const tMaxH = dh !== 0 ? (GRID_WIDTH - start.h) / dh : Infinity;
-    const tMinH = dv !== 0 ? (1 - start.h) / dh : Infinity;
-    const tMaxV = dv !== 0 ? (GRID_HEIGHT - start.v) / dv : Infinity;
-
-    // Find the smallest positive t that hits a boundary
-    let tBoundary = Infinity;
-    if (dh > 0) tBoundary = Math.min(tBoundary, tMaxH);
-    else if (dh < 0) tBoundary = Math.min(tBoundary, tMinH);
-    if (dv > 0) tBoundary = Math.min(tBoundary, tMaxV);
-    else if (dv < 0) tBoundary = Math.min(tBoundary, tMinV);
-
-    // Calculate the boundary point
-    let endH = Math.round(start.h + tBoundary * dh);
-    let endV = Math.round(start.v + tBoundary * dv);
-
-    // Clamp to grid boundaries
-    endV = Math.max(1, Math.min(GRID_HEIGHT, endV));
-    endH = Math.max(1, Math.min(GRID_WIDTH, endH));
-
-    // Generate points along the line from start to the boundary
+    const { v: endV, h: endH } = getPointTenStepsAway(start, target);
+    console.log(start, target, { v: endV, h: endH });
     const points = bresenhamLine(start.v, start.h, endV, endH);
     let skipFirst = true;
 
@@ -100,21 +105,25 @@ function traceTorpedoPath(player: Player, start: Point, target: Point): TorpedoC
         if (planet) return { type: "planet", planet: planet };
 
         // Check for star
-        if (stars.some(star => star.position.v === v && star.position.h === h)) {
-            return { type: "star" };
+        console.log("checking " + v + " " + h);
+        const star = stars.find(star => star.position.v === v && star.position.h === h);
+        if (star) {
+            console.log("found star", star.position);
+            return { type: "star", star: star };
         }
 
         // Check for black hole
-        if (blackholes.some(bh => bh.position.v === v && bh.position.h === h)) {
-            return { type: "blackhole" };
+        const blackhole = blackholes.find(bh => bh.position.v === v && bh.position.h === h);
+        if (blackhole) {
+            return { type: "blackhole", blackhole: blackhole };
         }
     }
 
     // No collision, reached the grid boundary
     const boundaryPoint = { v: endV, h: endH };
-    if (!isInBounds(boundaryPoint.v, boundaryPoint.h)) {
-        throw new Error(`Boundary point ${JSON.stringify(boundaryPoint)} is outside grid boundaries`);
-    }
+    // if (!isInBounds(boundaryPoint.v, boundaryPoint.h)) {
+    //     throw new Error(`Boundary point ${JSON.stringify(boundaryPoint)} is outside grid boundaries`);
+    // }
     return { type: "boundary", point: boundaryPoint };
 }
 // function traceTorpedoPath(start: Point, target: Point): TorpedoCollision {
@@ -279,6 +288,8 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
         return;
     }
 
+    console.log(targets);
+
     for (let i = 0; i < targets.length; i++) {
         const target = targets[i];
         if (target.v === player.ship.position.v && target.h === player.ship.position.h) {
@@ -298,10 +309,12 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
         let fired = false;
         switch (collision?.type) {
             case "ship":
+                console.log("TORPEDO OF SHIP", collision.player.ship?.position);
                 torpedoShip(player, collision.player, i + 1);
                 fired = true;
                 break;
             case "planet":
+                console.log("TORPEDO OF PLANET", collision.planet.position);
                 if (collision.planet.isBase) {
                     applyTorpedoPlanetDamage(player, collision.planet, i + 1);
                 } else {
@@ -309,34 +322,39 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 }
                 fired = true;
                 break;
-            case "blackhole":
-                sendMessageToClient(player, formatTorpedoLostInVoid(player, target.v, target.h));
-                fired = true;
-                break;
             case "star":
-                sendMessageToClient(player, formatTorpedoExplosion(player, target.v, target.h));
+                console.log("TORPEDO OF STAR", target.v, target.h);
+                sendMessageToClient(player, formatTorpedoExplosion(player, collision.star.position.v, collision.star.position.h));
                 if (Math.random() > 0.8) {
-                    triggerNovaAt(player, target.v, target.h);
+                    triggerNovaAt(player, collision.star.position.v, collision.star.position.h);
                 }
                 fired = true;
                 break;
-            case "target": {
-                const { v, h } = collision.point;
-                const finalTarget =
-                    players.find(p => p.ship && p.ship.position.h === h && p.ship.position.v === v) ||
-                    planets.find(p => p.position.h === h && p.position.v === v);
+            case "blackhole":
+                console.log("TORPEDO OF BLACKHOLE", target.v, target.h);
+                sendMessageToClient(player, formatTorpedoLostInVoid(player, collision.blackhole.position.v, collision.blackhole.position.h));
+                fired = true;
+                break;
 
-                if (!finalTarget) {
-                    sendMessageToClient(player, formatTorpedoMissed(player, v, h));
-                    break;
-                }
-                console.log("FINAL TARGET");
-                if (finalTarget instanceof Player) torpedoShip(player, finalTarget, i + 1);
-                else if (finalTarget instanceof Planet && finalTarget.isBase) applyTorpedoPlanetDamage(player, finalTarget, i + 1);
-                else if (finalTarget instanceof Planet) applyTorpedoPlanetDamage(player, finalTarget, i + 1);
-                fired = true;
-                break;
-            }
+            // case "target": {
+            //     console.log("TORPEDO OF GENERIC");
+
+            //     const { v, h } = collision.point;
+            //     const finalTarget =
+            //         players.find(p => p.ship && p.ship.position.h === h && p.ship.position.v === v) ||
+            //         planets.find(p => p.position.h === h && p.position.v === v);
+
+            //     if (!finalTarget) {
+            //         sendMessageToClient(player, formatTorpedoMissed(player, v, h));
+            //         break;
+            //     }
+            //     console.log("FINAL TARGET");
+            //     if (finalTarget instanceof Player) torpedoShip(player, finalTarget, i + 1);
+            //     else if (finalTarget instanceof Planet && finalTarget.isBase) applyTorpedoPlanetDamage(player, finalTarget, i + 1);
+            //     else if (finalTarget instanceof Planet) applyTorpedoPlanetDamage(player, finalTarget, i + 1);
+            //     fired = true;
+            //     break;
+            // }
             default:
                 sendMessageToClient(player, `Torpedo failed to reach target.`);
                 fired = true;
@@ -384,6 +402,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
             }
         }
     }
+    done?.();
 }
 
 const DESTRUCTION_DAMAGE_THRESHOLD = 2500;
@@ -648,8 +667,10 @@ export function applyTorpedoShipDamage(
     // Handle ship destruction
     if (target.ship.energy <= 0 || target.ship.damage >= DESTRUCTION_DAMAGE_THRESHOLD) {
 
-        sendMessageToClient(target, `You have been destroyed by ${attackerName}.`); // sendmessage given needs to be delivered.
+        sendMessageToClient(target, `You have been destroyed by ${attackerName}.`, true, false); // sendmessage given needs to be delivered.
         removePlayerFromGame(target);
+        sendMessageToClient(target, ``, true, true); // sendmessage given needs to be delivered.
+
 
 
         if (attacker instanceof Player) {
@@ -725,7 +746,7 @@ export function formatTorpedoPlanetHit({
     remainingBuilds: number;
     outputLevel: OutputSetting;
 }): string {
-    const coords = `${planet.position.v} -${planet.position.h} `;
+    const coords = `${planet.position.v} -${planet.position.h}`;
 
     switch (outputLevel) {
         case "SHORT":
@@ -782,7 +803,7 @@ function formatTorpedoLostInVoid(player: Player, v: number, h: number): string {
         case "SHORT":
             return `F > ${coords} Vanished`;
         case "MEDIUM":
-            return `Torpedo disappeared at ${coords} `;
+            return `Torpedo swallowed by black hole`;
         case "LONG":
         default:
             return `Torpedo lost at ${coords}. Possible gravitational anomaly encountered.`;
@@ -796,7 +817,7 @@ function formatTorpedoExplosion(player: Player, v: number, h: number): string {
         case "SHORT":
             return `F > ${coords} BOOM`;
         case "MEDIUM":
-            return `Explosion at ${coords} !`;
+            return `Explosion at ${coords}!`;
         case "LONG":
         default:
             return `Torpedo triggered explosion at ${coords}. Unstable celestial mass may have ignited.`;

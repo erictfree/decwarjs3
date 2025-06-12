@@ -271,8 +271,9 @@ export function checkForBlackholes(): void {
         // if that ship happens to be on a black‑hole sector…
         if (blackholes.some(bh => bh.position.v === v && bh.position.h === h)) {
             sendMessageToClient(player,
-                "You have fallen into a black hole. Your ship is crushed and annihilated.");
-            //putPlayerInLimbo(player, true); //TODO
+                "\r\nYou have fallen into a black hole. Your ship is crushed and annihilated.");
+            removePlayerFromGame(player);
+            sendMessageToClient(player, "", true, true);
         }
     }
 }

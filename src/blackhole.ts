@@ -28,18 +28,4 @@ export class Blackhole {
     }
 }
 
-// export function checkForBlackHoles(): void {
-//     for (const player of players) {
-//         const ship = player.ship;
-//         const { x, y } = ship.position;
-
-//         // if that ship happens to be on a black‑hole sector…
-//         if (blackHoles.some(bh => bh.x === x && bh.y === y)) {
-//             sendMessageToClient(player,
-//                 "You have fallen into a black hole. Your ship is crushed and annihilated.");
-//             addNewsItem(`${ship.name} lost to a black hole at ${y}-${x}`);
-//             putPlayerInLimbo(player, true);
-//         }
-//     }
-// }
 
