@@ -1,6 +1,5 @@
 import { Player } from './player.js';
 import { sendMessageToClient } from './communication.js';
-import { stardate } from './game.js';
 const gameStartTime = Date.now();
 
 export function timeCommand(player: Player): void {

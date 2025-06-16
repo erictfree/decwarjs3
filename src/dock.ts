@@ -19,11 +19,11 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
         return;
     }
 
-    if (player.ship.shieldsUp && player.ship.shieldEnergy > 0) {
-        sendMessageToClient(player, "Shields must be down to dock.");
-        done?.();
-        return;
-    }
+    // if (player.ship.shieldsUp && player.ship.shieldEnergy > 0) {
+    //     sendMessageToClient(player, "Shields must be down to dock.");
+    //     done?.();
+    //     return;
+    // }
 
     let isBase = false;
     let nearPlanet = false;

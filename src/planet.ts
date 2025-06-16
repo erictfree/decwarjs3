@@ -5,6 +5,11 @@ import { getRandom } from './util/random.js';
 import { getNearbyAlliedShips } from './ship.js';
 import { addPendingMessage } from './communication.js';
 
+interface CaptureLock {
+    status: boolean;
+    time: number;
+}
+
 export class Planet {
     public position: Position;
     public side: Side;
@@ -13,6 +18,7 @@ export class Planet {
     public energy: number;   // base
     public name: string;
     public hasCriedForHelp: boolean;
+    public captureLock: CaptureLock;
     //public captureProgress: { by: Side, progress: number, player: Player } | undefined;   // NOT CLEAR CHECK USAGE
 
     constructor(v: number, h: number) {
@@ -21,8 +27,9 @@ export class Planet {
         this.builds = 0;
         this.isBase = false;
         this.energy = 0;
-        this.name = "unnamed planet";
+        this.name = "unknown";
         this.hasCriedForHelp = false;
+        this.captureLock = { status: false, time: 0 };
         //this.captureProgress = undefined;   // NOT CLEAR CHECK USAGE
     }
 

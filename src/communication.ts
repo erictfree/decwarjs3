@@ -60,7 +60,7 @@ export function sendMessageToOthers(player: Player, message: string, range: numb
         if (other === player || !other.ship || !other.radioOn) continue;
 
         if (chebyshev(origin, other.ship.position) <= range) {
-            sendMessageToClient(other, message);
+            sendMessageToClient(other, "\r\n" + message, true, true);
         }
     }
 }

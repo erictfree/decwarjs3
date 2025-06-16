@@ -62,7 +62,7 @@ export class Ship {
         this.player = player;
         this.position = findEmptyLocation() || { v: 1, h: 1 };
         this.energy = MAX_SHIP_ENERGY;
-        this.shieldsUp = false;
+        this.shieldsUp = true;
         this.shieldEnergy = MAX_SHIELD_ENERGY;
         this.docked = false;
         this.name = "Unknown";
@@ -92,7 +92,7 @@ export class Ship {
         this.cooldowns = { phasersAvailableAt: [0, 0] };
     }
 
-    raiseShields(): void {
+    raiseShields(): void {   // TODO factor in shield device damange?
         if (!this.shieldsUp && this.energy >= 100) {
             this.energy -= 100;
             this.shieldsUp = true;

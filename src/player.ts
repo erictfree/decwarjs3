@@ -77,7 +77,7 @@ export class Player {
         this.multiLine = false;
         this.ship = this.createShip();
         this.gagList = new Set();
-        this.radioOn = false;
+        this.radioOn = true;
         //this.alive = false;
         this.history = [];
         this.historyIndex = -1;
@@ -283,15 +283,15 @@ export class Player {
     getNextHistory(): string | undefined {
         const len = this.history.length;
         if (len === 0) return undefined;
-        return this.history[len - 1];
-        // Move backward in history
-        // this.historyIndex--;
+        // return this.history[len - 1];
+        //Move backward in history
+        this.historyIndex--;
 
-        // if (this.historyIndex < 0) {
-        //     this.historyIndex = len - 1; // loop back to most recent
-        // }
+        if (this.historyIndex < 0) {
+            this.historyIndex = len - 1; // loop back to most recent
+        }
 
-        // return this.history[this.historyIndex];
+        return this.history[this.historyIndex];
     }
 
 

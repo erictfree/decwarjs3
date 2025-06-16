@@ -9,7 +9,7 @@ import { updateRomulan, maybeSpawnRomulan } from "./romulan.js";
 import { sendAllPendingMessages, sendMessageToClient, addPendingMessage } from "./communication.js";
 import net from "net";
 import { chebyshev } from "./coords.js";
-import { applyPhaserShipDamage } from "./phaser.js";
+import { calcBasePhaserDamage } from "./phaser.js";
 import { pointsCommand } from "./points.js";
 
 export const players: Player[] = [];
@@ -85,6 +85,7 @@ export function processTimeConsumingMove(player: Player) {
 function updateGame(): void {
     checkForDisconnectedPlayers();
     checkForInactivity();
+    releaseStalePlanetCaptureLocks()
     if (settings.blackholes) {
         checkForBlackholes();
     }
@@ -92,6 +93,18 @@ function updateGame(): void {
     setTimeout(updateGame, 1000);
 }
 updateGame();
+
+function releaseStalePlanetCaptureLocks() {
+    const now = Date.now();
+    for (const planet of planets) {
+        if (planet.captureLock.status === true &&
+            (now - planet.captureLock.time > 10000)
+        ) {
+            planet.captureLock.status = false;
+        }
+    }
+}
+
 
 
 function checkForPendingMessages(): void {
@@ -158,15 +171,14 @@ export function performPlanetOrBaseAttacks(base: boolean = false): void {
             const maxRange = base ? 4 : 2; // 4 sectors for bases, 2 for planets
             if (range > maxRange) continue;
 
-            const hit = planetOrBasePhaserDamage(range, player);
-            const powfac = player.ship.shieldsUp ? 40 : 80; // Fortran: powfac halved if shields up
-            const phit = base ? 0.4 : 0.2; // 200 energy for bases, 100 for planets
+            // const hit = planetOrBasePhaserDamage(range, player);
+            // const powfac = player.ship.shieldsUp ? 4 : 8; // Fortran: powfac halved if shields up
+            const phit = base ? 200 : 100; // 200 energy for bases, 100 for planets
 
-            if (hit > 0) {
-                addPendingMessage(player, `\r\n** ALERT ** ${base ? 'Starbase' : 'Planet'} at ${planet.position.v}-${planet.position.h} opens fire!`);
-                addPendingMessage(player, `You are under automatic phaser attack from ${base ? 'enemy starbase' : 'planet'}!`);
-                applyPhaserShipDamage(planet, player, hit, powfac, phit); // Fixed TS2554
-            }
+            addPendingMessage(player, `\r\n** ALERT ** ${base ? 'Starbase' : 'Planet'} at ${planet.position.v}-${planet.position.h} opens fire!`);
+            addPendingMessage(player, `You are under automatic phaser attack from ${base ? 'enemy starbase' : 'planet'}!`);
+
+            calcBasePhaserDamage(phit, planet, player);
         }
     }
 }

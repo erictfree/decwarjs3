@@ -236,7 +236,7 @@ function handleControlC(player: Player, socket: net.Socket): void {
   // 5. Notify user + reprint prompt
   if (atCommandPrompt) {
     if (player.ship && player.ship.condition == "RED") {
-      socket.write("You can't exit under condition RED.\r\n");
+      socket.write("Use QUIT to terminate while under RED alert.\r\n");
       socket.write(`${player.getPrompt()} `);
     } else {
       removePlayerFromGame(player);

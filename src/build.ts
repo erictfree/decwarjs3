@@ -43,6 +43,12 @@ export function buildCommand(player: Player, command: Command, done?: () => void
         return;
     }
 
+    if (planet.side === "NEUTRAL") {
+        sendMessageToClient(player, "Planet not yet captured.");
+        done?.();
+        return;
+    }
+
     if (planet.side !== player.ship.side) {
         sendMessageToClient(player, `BUILD denied: planet is held by the ${planet.side}.`);
         done?.();

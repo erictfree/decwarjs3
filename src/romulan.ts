@@ -14,8 +14,8 @@ import {
     planets,
 } from './game.js';
 import { addPendingMessage, sendMessageToClient } from './communication.js';
-import { applyPhaserShipDamage, applyPhaserBaseDamage } from './phaser.js';
-import { applyTorpedoShipDamage, applyTorpedoBaseDamage } from './torpedo.js';
+import { calculateAndApplyPhaserDamage } from './phaser.js';
+import { torpedoDamage } from './torpedo.js';
 import { bresenhamLine, chebyshev, findEmptyLocation, findObjectAtPosition } from './coords.js';
 import { Planet } from './planet.js';
 import { pointsManager } from './game.js';
@@ -177,7 +177,8 @@ export function updateRomulan(): void {
 
                         sendMessageToClient(targetPlayer, "You are under Romulan phaser fire!");
                         addPendingMessage(romulan, `Romulan ship ${romulan.ship.name} fires phasers at ${targetPlayer.ship.name} at ${targetPlayer.ship.position.v}-${targetPlayer.ship.position.h}!`);
-                        applyPhaserShipDamage(romulan, targetPlayer, hit, powfac, phit);
+                        //applyPhaserShipDamage(romulan, targetPlayer, hit, powfac, phit);
+                        calculateAndApplyPhaserDamage(romulan, targetPlayer, hit);
                     }
                 } else {
                     if (romulanTarget.side === 'FEDERATION' || romulanTarget.side === 'EMPIRE') {
@@ -189,7 +190,8 @@ export function updateRomulan(): void {
                             const phit = 0.4; // 200 energy equivalent (matches original 200 damage)
                             const hit = romulanPhaserDamage(distance, romulan);
                             addPendingMessage(romulan, `Romulan ship ${romulan.ship.name} fires phasers at ${baseTarget.side} base at ${baseTarget.position.v}-${baseTarget.position.h}!`);
-                            applyPhaserBaseDamage(romulan, baseTarget, hit, powfac, phit); // Fixed TS2554
+                            //applyPhaserBaseDamage(romulan, baseTarget, hit, powfac, phit); // Fixed TS2554
+                            calculateAndApplyPhaserDamage(romulan, baseTarget, hit);
                         }
                     }
                 }
@@ -197,12 +199,12 @@ export function updateRomulan(): void {
                 const hit = 4000 + 4000 * Math.random();
                 if (romulanTarget instanceof Player) {
                     sendMessageToClient(romulanTarget, "A Romulan torpedo strikes!");
-                    applyTorpedoShipDamage(romulanTarget, romulan, hit, false);
+                    torpedoDamage(romulanTarget, romulan);//, hit, false);
                 } else {
                     if (romulanTarget.side === 'FEDERATION' || romulanTarget.side === 'EMPIRE') {
                         const baseTarget = findBaseAt(romulanTarget!.position, romulanTarget.side);
                         if (baseTarget) {
-                            applyTorpedoBaseDamage(romulan, baseTarget, 1);
+                            torpedoDamage(romulan, baseTarget);//, 1);
                         }
                     }
                 }
