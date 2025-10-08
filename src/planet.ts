@@ -4,6 +4,8 @@ import { planets, bases } from './game.js';
 import { getRandom } from './util/random.js';
 import { getNearbyAlliedShips } from './ship.js';
 import { addPendingMessage } from './communication.js';
+import { Player } from './player.js';
+import { players } from './game.js';
 
 interface CaptureLock {
     status: boolean;
@@ -122,6 +124,53 @@ export class Planet {
 
         promotePlanetsToBases("FEDERATION", planets);
         promotePlanetsToBases("EMPIRE", planets);
+    }
+}
+
+
+
+// Exact BASBLD parity
+export function baseEnergyRegeneration(triggeringPlayer: Player) {
+    // Helpers
+    const alivePlayers = players.filter(p => p?.ship && p.ship.energy > 0);
+    const numply = alivePlayers.length; // active players only
+    const countActiveForSide = (side: Side) =>
+        Math.max(1, alivePlayers.filter(p => p.ship!.side === side).length); // avoid /0
+
+    const isRomulan = !!triggeringPlayer.ship?.romulanStatus?.isRomulan;
+
+    // Integer 'n' exactly like Fortran:
+    // Romulan: n = 50 / (numply + 1)
+    // Player : n = 25 / numsid(team)
+    let n: number;
+    if (isRomulan) {
+        n = Math.floor(50 / (numply + 1)); // integer division
+    } else {
+        const moverSide = triggeringPlayer.ship!.side as Side;
+        const team: Side = moverSide; // FEDERATION | EMPIRE | ROMULAN (ROMULAN shouldn't happen here, but it's typed)
+
+        // numsid(team) — active ships on mover's team
+        const numsidRaw = countActiveForSide(team); // declare/import as (side: Side) => number
+        const numsid = Math.max(1, numsidRaw);      // avoid divide-by-zero
+
+        n = Math.floor(25 / numsid);
+    }
+
+    // Which bases to regenerate:
+    // - Romulan: both sides
+    // - Player : opposite side only
+    const sidesToRegen: ("FEDERATION" | "EMPIRE")[] = isRomulan
+        ? ["FEDERATION", "EMPIRE"]
+        : triggeringPlayer.ship!.side === "FEDERATION" ? ["EMPIRE"] : ["FEDERATION"];
+
+    // Do the regeneration, capping at 1000 (Fortran min0(..., 1000))
+    for (const side of sidesToRegen) {
+        const list = side === "FEDERATION" ? bases.federation : bases.empire;
+        for (const base of list) {
+            if (base.energy > 0) {
+                base.energy = Math.min(base.energy + n, 1000);
+            }
+        }
     }
 }
 

@@ -4,13 +4,18 @@ import { Player } from "./player.js";
 import { Star } from "./star.js";
 import { setRandomSeed } from './util/random.js';
 import { PointsManager } from "./points.js";
-import { settings, INACTIVITY_TIMEOUT, INITIAL_BASE_STRENGTH } from "./settings.js";
+import { settings, INACTIVITY_TIMEOUT } from "./settings.js";
 import { updateRomulan, maybeSpawnRomulan } from "./romulan.js";
-import { sendAllPendingMessages, sendMessageToClient, addPendingMessage } from "./communication.js";
+import { sendAllPendingMessages, sendMessageToClient } from "./communication.js";
 import net from "net";
 import { chebyshev } from "./coords.js";
-import { calcBasePhaserDamage } from "./phaser.js";
 import { pointsCommand } from "./points.js";
+import { basphaFireOnce } from "./starbase_phasers.js";
+import { planetPhaserDefense } from "./phaser.js";
+import { baseEnergyRegeneration } from "./planet.js";
+export const SHIP_FATAL_DAMAGE = 25000;  // adjusted for fortran derived code
+import { romulanApproachTick } from "./romulan.js";
+
 
 export const players: Player[] = [];
 export const limbo: Player[] = [];
@@ -23,6 +28,8 @@ export const stars: Star[] = [];
 export const blackholes: Blackhole[] = [];
 export const stardate: number = 0;
 export const pointsManager: PointsManager = new PointsManager();
+
+export const PLANET_PHASER_RANGE = 2; // Fortran pdist <= 2
 
 export function generateGalaxy(seed?: string): void {
     if (!seed) {
@@ -49,38 +56,81 @@ export function generateGalaxy(seed?: string): void {
     settings.generated = true;
 }
 
+// export function processTimeConsumingMove(player: Player) {
+//     if (!player.ship) return;
+//     if (player.ship.side == "FEDERATION") {
+//         settings.teamTurns.federation += 1;
+//     } else if (player.ship.side == "EMPIRE") {
+//         settings.teamTurns.empire += 1;
+//     } else if (player.ship.side == "ROMULAN") {
+//         settings.teamTurns.romulan += 1;
+//     }
+
+//     player.stardate += 1;
+//     settings.dotime += 1;
+//     const numply = players.length;
+
+//     // Perform periodic actions if dotime >= numply (mirrors if (dotime .lt. numply) goto 3501)
+//     if (settings.dotime >= numply) {
+//         settings.dotime = 0; // Reset dotime (mirrors dotime = 0)
+
+//         // Periodic actions (mirrors basbld, baspha, plnatk, romdrv)
+//         baseEnergyRegeneration(player); // Mirrors BASBLD
+//         performPlanetOrBaseAttacks(true); // Mirrors BASPHA (enemy bases)
+//         performPlanetOrBaseAttacks(false); // Mirrors PLNATK (neutral/enemy planets)
+//         updateRomulan(); // Mirrors romdrv (partially)
+//         if (settings.romulans) {
+//             maybeSpawnRomulan(); // Mirrors romdrv (Romulan spawning)
+//         }
+//     }
+
+//     for (const player of players) {
+//         player.updateLifeSupport();
+//     }
+// }
+
 export function processTimeConsumingMove(player: Player) {
     if (!player.ship) return;
-    if (player.ship.side == "FEDERATION") {
+
+    // Team turn bookkeeping
+    if (player.ship.side === "FEDERATION") {
         settings.teamTurns.federation += 1;
-    } else if (player.ship.side == "EMPIRE") {
+    } else if (player.ship.side === "EMPIRE") {
         settings.teamTurns.empire += 1;
-    } else if (player.ship.side == "ROMULAN") {
+    } else if (player.ship.side === "ROMULAN") {
         settings.teamTurns.romulan += 1;
     }
 
     player.stardate += 1;
     settings.dotime += 1;
-    const numply = players.length;
 
-    // Perform periodic actions if dotime >= numply (mirrors if (dotime .lt. numply) goto 3501)
+    // ACTIVE players only (alive ships), never 0; 25,000 fatal threshold
+    const numply = Math.max(
+        1,
+        players.filter(p => p?.ship && p.ship.energy > 0 && p.ship.damage < SHIP_FATAL_DAMAGE).length
+    );
+
+    // Once per full sweep of players
     if (settings.dotime >= numply) {
-        settings.dotime = 0; // Reset dotime (mirrors dotime = 0)
+        settings.dotime = 0; // reset sweep
 
-        // Periodic actions (mirrors basbld, baspha, plnatk, romdrv)
-        baseEnergyRegeneration(player); // Mirrors BASBLD
-        performPlanetOrBaseAttacks(true); // Mirrors BASPHA (enemy bases)
-        performPlanetOrBaseAttacks(false); // Mirrors PLNATK (neutral/enemy planets)
-        updateRomulan(); // Mirrors romdrv (partially)
+        // Periodic parity actions
+        baseEnergyRegeneration(player);     // BASBLD
+        basphaFireOnce(player, numply);     // BASPHA (enemy bases fire once)
+        planetPhaserDefense(player);        // PLNATK (planet auto-phasers)
+
+        // Romulan driver (spawn + behavior), gated
         if (settings.romulans) {
-            maybeSpawnRomulan(); // Mirrors romdrv (Romulan spawning)
+            updateRomulan();                  // ROMDRV weapon logic (fires if cooldowns ready)
+            romulanApproachTick();            // Optional: take safe steps toward target between volleys
+            maybeSpawnRomulan();              // ROMDRV spawn cadence
         }
     }
 
-    for (const player of players) {
-        player.updateLifeSupport();
-    }
+    // Life support upkeep for everyone
+    for (const p of players) p.updateLifeSupport();
 }
+
 
 function updateGame(): void {
     checkForDisconnectedPlayers();
@@ -128,32 +178,14 @@ function checkForInactivity() {
     }
 }
 
-function baseEnergyRegeneration(player: Player): void {
-    // if player is romulan get both bases, otherwise get enemy bases
-    let n = 0;
-    let basestoUpdate: Planet[] = [];
-    if (player.ship && player.ship.side === "ROMULAN") {
-        basestoUpdate = [...bases.federation, ...bases.empire];
-        n = Math.floor(50 / (players.length + 1));
-    } else if (player.ship) {
-        const side = player.ship.side;
-        basestoUpdate = (player.ship.side === "FEDERATION" ? bases.empire : bases.federation);
-        // Count number of players on the same side as the player
-        const numSidePlayers = players.filter(p => p.ship && p.ship.side === side).length;
-        n = Math.floor(25 / (numSidePlayers || 1));
-    }
-    for (const base of basestoUpdate) {
-        base.energy = Math.min(base.energy + n, INITIAL_BASE_STRENGTH);
-    }
-}
 
-function planetOrBasePhaserDamage(distance: number, target: Player): number {
-    let baseHit = Math.pow(0.9 + 0.02 * Math.random(), distance); // Fortran: pwr(0.9–0.92, id)
-    if (target.ship && (target.ship.devices.phaser > 0 || target.ship.devices.computer > 0)) {
-        baseHit *= 0.8; // Fortran: hit *= 0.8 if damaged
-    }
-    return baseHit;
-}
+// function planetOrBasePhaserDamage(distance: number, target: Player): number {
+//     let baseHit = Math.pow(0.9 + 0.02 * Math.random(), distance); // Fortran: pwr(0.9–0.92, id)
+//     if (target.ship && (target.ship.devices.phaser > 0 || target.ship.devices.computer > 0)) {
+//         baseHit *= 0.8; // Fortran: hit *= 0.8 if damaged
+//     }
+//     return baseHit;
+// }
 
 export function performPlanetOrBaseAttacks(base: boolean = false): void {
     for (const planet of planets) {
@@ -170,15 +202,11 @@ export function performPlanetOrBaseAttacks(base: boolean = false): void {
             const range = chebyshev(planet.position, player.ship.position);
             const maxRange = base ? 4 : 2; // 4 sectors for bases, 2 for planets
             if (range > maxRange) continue;
+            //const phit = base ? 200 : 100; // 200 energy for bases, 100 for planets
 
-            // const hit = planetOrBasePhaserDamage(range, player);
-            // const powfac = player.ship.shieldsUp ? 4 : 8; // Fortran: powfac halved if shields up
-            const phit = base ? 200 : 100; // 200 energy for bases, 100 for planets
 
-            addPendingMessage(player, `\r\n** ALERT ** ${base ? 'Starbase' : 'Planet'} at ${planet.position.v}-${planet.position.h} opens fire!`);
-            addPendingMessage(player, `You are under automatic phaser attack from ${base ? 'enemy starbase' : 'planet'}!`);
-
-            calcBasePhaserDamage(phit, planet, player);
+            // DO_DAMANGE
+            // calcShipFromPlanetPhaserDamage(phit, planet, player);
         }
     }
 }

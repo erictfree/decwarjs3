@@ -1,9 +1,20 @@
 import { addPendingMessage, sendMessageToClient, sendOutputMessage } from './communication.js';
 import { isInBounds, Position, findEmptyLocation, chebyshev, findObjectAtPosition, ocdefCoords, isAdjacent } from './coords.js';
-import { SHIPNAMES, Side, Condition, MAX_TORPEDOES, MAX_SHIP_ENERGY, MAX_SHIELD_ENERGY } from './settings.js';
+import { SHIPNAMES, Condition, MAX_TORPEDOES, MAX_SHIP_ENERGY, MAX_SHIELD_ENERGY } from './settings.js';
 import { Player } from './player.js';
 import { players, planets } from './game.js';
 import { Planet } from './planet.js';
+import { bases } from './game.js';
+import { Side } from './settings.js';
+
+
+type DockableTarget = { position: { v: number; h: number } }; // minimal shape
+
+function hasDockTarget(s: Ship): s is Ship & { dockTarget?: DockableTarget | null } {
+    // This keeps it structural: only cares that the property exists
+    return "dockTarget" in (s as object);
+}
+
 
 
 type Cooldowns = {
@@ -421,27 +432,55 @@ export function getAdjacentFriendlyPlanets(ship: Ship): Planet[] {
 }
 
 export function handleUndockForAllShipsAfterPortDestruction(destroyedPort: Planet): void {
-    for (const player of players) {
-        if (!player.ship) continue;
-        const ship = player.ship;
+    const side = destroyedPort.side;
+    if (side !== "FEDERATION" && side !== "EMPIRE") return; // nothing to do for neutral
 
-        // Only consider ships that are currently docked
-        if (!ship.docked) continue;
+    // Alive friendly bases
+    const friendlyBases = (side === "FEDERATION" ? bases.federation : bases.empire)
+        .filter(b => b.isBase && b.energy > 0);
 
-        // Check adjacency to the destroyed object
-        if (!isAdjacent(ship.position, destroyedPort.position)) continue;
+    // Friendly captured planets (if your game allows docking at them)
+    const friendlyPlanets = planets.filter(pl => pl.side === side && !pl.isBase /* captured planet */);
 
-        // Run undocking logic
-        handleUndockAfterPortDestruction(ship);
+    for (const p of players) {
+        const ship = p.ship;
+        if (!ship || !ship.docked) continue;
+        if (ship.side !== side) continue; // only ships of the destroyed side are affected
+
+        // If ship is still adjacent to ANY friendly base or friendly captured planet, it can remain docked.
+        const stillAdjacentToFriendlyBase = friendlyBases.some(b => isAdjacent(ship.position, b.position));
+        const stillAdjacentToFriendlyPlanet = friendlyPlanets.some(pl => isAdjacent(ship.position, pl.position));
+        const canRemainDocked = stillAdjacentToFriendlyBase || stillAdjacentToFriendlyPlanet;
+
+        if (!canRemainDocked) {
+            // Force undock and set RED (BASKIL behavior)
+            ship.docked = false;
+            ship.condition = "RED";
+
+            // Clear any tracked dock target if present
+            if (hasDockTarget(ship)) {
+                ship.dockTarget = undefined;
+            }
+
+            addPendingMessage(p, "Your docking port was destroyed. You are now UNDOCKED. Condition set to RED.");
+        } else {
+            // Optional retargeting if you track a dock target (safe no-op otherwise)
+            // if (hasDockTarget(ship)) {
+            //   const teamBases = ship.side === "FEDERATION" ? bases.federation : bases.empire;
+            //   const nearbyBase = teamBases.find(b => isAdjacent(ship.position, b.position));
+            //   const nearbyPlanet = planets.find(pl => pl.side === ship.side && isAdjacent(ship.position, pl.position));
+            //   ship.dockTarget = nearbyBase ?? nearbyPlanet ?? ship.dockTarget;
+            // }
+        }
     }
 }
 
-// is this needed?
+// // is this needed?
 
-export function handleUndockAfterPortDestruction(ship: Ship): void {
-    const remainingPorts = getAdjacentFriendlyPlanets(ship);
-    if (ship.docked && remainingPorts.length <= 1) {
-        ship.docked = false;
-        addPendingMessage(ship.player, "Your docking port was destroyed. You are now undocked.");
-    }
-}
+// export function handleUndockAfterPortDestruction(ship: Ship): void {
+//     const remainingPorts = getAdjacentFriendlyPlanets(ship);
+//     if (ship.docked && remainingPorts.length <= 1) {
+//         ship.docked = false;
+//         addPendingMessage(ship.player, "Your docking port was destroyed. You are now undocked.");
+//     }
+// }

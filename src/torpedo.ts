@@ -5,31 +5,32 @@ import {
     putClientOnHold,
     releaseClient,
     sendMessageToClient,
-    sendMessageToOthers,
-    sendMessageToOthersWithFormat
+    sendMessageToOthers
 } from './communication.js';
 import {
     MAX_SHIELD_ENERGY,
     MAX_TORPEDO_RANGE,
     GRID_HEIGHT,
     GRID_WIDTH,
-    OutputSetting,
     CoordMode
 } from './settings.js';
 import { Planet } from './planet.js';
 import { isInBounds, bresenhamLine, chebyshev, ocdefCoords } from './coords.js';
-import { disconnectTractorWithReason } from './tractor.js';
 import { players, bases, planets, stars, blackholes, pointsManager, removePlayerFromGame, checkEndGame } from './game.js';
-import { handleUndockForAllShipsAfterPortDestruction, attemptDisplaceFromImpact } from './ship.js';
+import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
 import { triggerNovaAt } from './nova.js';
 import { Star } from './star.js';
 import { Blackhole } from './blackhole.js';
-import { DEFAULT_BASE_ENERGY } from './settings.js';
-import { applyDamage } from './phaser.js';
+import { applyShipCriticalParity } from './phaser.js';
+import { Side } from './settings.js';
 
+type ScoringAPI = {
+    addDamageToBases?(amount: number, source: Player, side: Side): void;
+    addEnemiesDestroyed?(count: number, source: Player, side: Side): void;
+    addDamageToEnemies?(amount: number, source: Player, side: Side): void;
+};
 
-const TORPEDO_MIN_HIT = 4000;
-const TORPEDO_MAX_HIT = 8000;
+import { SHIP_FATAL_DAMAGE } from './game.js';
 
 type TorpedoCollision =
     | { type: "ship"; player: Player }
@@ -126,48 +127,7 @@ function traceTorpedoPath(player: Player, start: Point, target: Point): TorpedoC
     // }
     return { type: "boundary", point: boundaryPoint };
 }
-// function traceTorpedoPath(start: Point, target: Point): TorpedoCollision {
-//     const points = bresenhamLine(start.x, start.y, target.x, target.y);
-//     let skipFirst = true;
 
-//     for (const { x, y } of points) {
-//         if (skipFirst) {
-//             skipFirst = false;
-//             continue; // skip the attacker's own position
-//         }
-
-//         // Check for ship
-//         const ship = players.find(p => p.alive && p.ship.position.x === x && p.ship.position.y === y);
-//         if (ship) return { type: "ship", player: ship };
-
-//         // Check for planet
-//         const planet = planets.find(p => p.position.x === x && p.position.y === y);
-//         if (planet) return { type: "planet", planet: planet };
-
-//         const empireBase = bases.empire.find(b => b.position.x === x && b.position.y === y);
-//         if (empireBase) {
-//             return { type: "base", base: empireBase };
-//         }
-
-//         const federationBase = bases.federation.find(b => b.position.x === x && b.position.y === y);
-//         if (federationBase) {
-//             return { type: "base", base: federationBase };
-//         }
-
-//         // Check for star
-//         if (stars.some(star => star.x === x && star.y === y)) {
-//             return { type: "star" };
-//         }
-
-//         // Check for black hole
-//         if (blackHoles.some(bh => bh.x === x && bh.y === y)) {
-//             return { type: "blackhole" };
-//         }
-//     }
-
-//     // No collision, reached intended target
-//     return { type: "target", point: target };ddddd
-// }
 
 function getTargetsFromCommand(player: Player, args: string[], mode: "ABSOLUTE" | "RELATIVE" | "COMPUTED", cursor: number, n: number): { v: number; h: number }[] | null {
     const targets: { v: number; h: number }[] = [];
@@ -306,18 +266,42 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
         }
         let fired = false;
         switch (collision?.type) {
-            case "ship":
-                torpedoDamage(player, collision.player);//, i + 1);
+            case "ship": {
+                const victim = collision.player;
+                const res = torpedoDamage(player, victim);
                 fired = true;
-                break;
-            case "planet":
-                if (collision.planet.isBase) {
-                    torpedoDamage(player, collision.planet,);// i + 1);
-                } else {
-                    torpedoDamage(player, collision.planet);//, i + 1);
+
+                // Shooter message
+                {
+                    const coords = ocdefCoords(player.settings.ocdef, player.ship.position, victim.ship!.position);
+                    sendMessageToClient(player, `Torpedo hit ${victim.ship!.name} @${coords} for ${Math.round(res.hita)} damage${res.critdm ? " (CRIT)" : ""}.`);
                 }
-                fired = true;
+                // Victim message
+                addPendingMessage(victim, `${player.ship!.name} hit you with a torpedo for ${Math.round(res.hita)} damage${res.critdm ? " (CRIT)" : ""}.`);
+
+                // Endgame check if something died
+                if (res.isDestroyed) {
+                    checkEndGame();
+                }
                 break;
+            }
+
+            case "planet": {
+                const p = collision.planet;
+                const res = torpedoDamage(player, p); // will no-op on non-base planets by validation
+                fired = true;
+
+                const coords = ocdefCoords(player.settings.ocdef, player.ship.position, p.position);
+                if (p.isBase) {
+                    sendMessageToClient(player, `Torpedo ${res.hita > 0 ? `hit base @${coords} for ${Math.round(res.hita)} damage` : `was deflected @${coords}`}${res.critdm ? " (CRIT)" : ""}.`);
+                    if (res.isDestroyed) checkEndGame();
+                } else {
+                    // Non-base planets are inert to torpedoes per your validation
+                    sendMessageToClient(player, `Torpedo impact on planet @${coords} had no significant effect.`);
+                }
+                break;
+            }
+
             case "star":
                 sendMessageToClient(player, formatTorpedoExplosion(player, collision.star.position.v, collision.star.position.h));
                 if (Math.random() < 0.8) {
@@ -325,35 +309,25 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 }
                 fired = true;
                 break;
+
             case "blackhole":
                 sendMessageToClient(player, formatTorpedoLostInVoid(player, collision.blackhole.position.v, collision.blackhole.position.h));
                 fired = true;
                 break;
 
-            // case "target": {
-            //     console.log("TORPEDO OF GENERIC");
+            case "boundary": {
+                const { v, h } = collision.point;
+                sendMessageToClient(player, `Torpedo flew off to ${ocdefCoords(player.settings.ocdef, player.ship.position, { v, h })} and detonated harmlessly.`);
+                fired = true;
+                break;
+            }
 
-            //     const { v, h } = collision.point;
-            //     const finalTarget =
-            //         players.find(p => p.ship && p.ship.position.h === h && p.ship.position.v === v) ||
-            //         planets.find(p => p.position.h === h && p.position.v === v);
-
-            //     if (!finalTarget) {
-            //         sendMessageToClient(player, formatTorpedoMissed(player, v, h));
-            //         break;
-            //     }
-            //     console.log("FINAL TARGET");
-            //     if (finalTarget instanceof Player) torpedoShip(player, finalTarget, i + 1);
-            //     else if (finalTarget instanceof Planet && finalTarget.isBase) applyTorpedoPlanetDamage(player, finalTarget, i + 1);
-            //     else if (finalTarget instanceof Planet) applyTorpedoPlanetDamage(player, finalTarget, i + 1);
-            //     fired = true;
-            //     break;
-            // }
             default:
                 sendMessageToClient(player, `Torpedo failed to reach target.`);
                 fired = true;
                 break;
         }
+
 
         if (i !== targets.length - 1) { // not last target
             if (fired) {
@@ -399,374 +373,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
     done?.();
 }
 
-const DESTRUCTION_DAMAGE_THRESHOLD = 2500;
 
-// export function torpedoShip(attacker: Player, target: Player, n: number): void {
-//     if (!target.ship) {
-//         sendMessageToClient(attacker, `Target already destroyed.`);
-//         return;
-//     }
-//     if (!attacker.ship) {
-//         sendMessageToClient(attacker, `You must be in a ship to fire torpedoes.`);
-//         return;
-//     }
-
-//     if (target.ship.side == attacker.ship.side) {
-//         const coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, { v: target.ship.position.v, h: target.ship.position.h })
-//         sendMessageToClient(attacker, `Weapons Officer: Captain, torpedo ${n} neutralized by friendly object ${coords}`);
-//         return;
-//     }
-
-//     const hit = TORPEDO_MIN_HIT + Math.random() * (TORPEDO_MAX_HIT - TORPEDO_MIN_HIT);
-
-//     disconnectTractorWithReason(target.ship, "torpedo");
-
-//     applyTorpedoShipDamage(target, attacker, hit, true);
-
-//     // Show hit info to attacker using formatted message (optional if `applyTorpedoShipDamage` already does this)
-//     sendMessageToClient(attacker, `Torpedo fired at ${target.ship.name} — estimated ${Math.round(hit)} damage.`);
-
-//     // DECWAR: side-effect from torpedo impact (push/displace)
-//     attemptDisplaceFromImpact(attacker, target);
-// }
-
-// export function applyTorpedoPlanetDamage(attacker: Player, planet: Planet, n: number): void {
-//     if (!attacker.ship) {
-//         sendMessageToClient(attacker, `You must be in a ship to fire torpedoes.`);
-//         return;
-//     }
-//     if (planet.side === attacker.ship.side) {
-//         const coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, planet.position);
-//         sendMessageToClient(attacker, `Weapons Officer: Captain, torpedo ${n} neutralized by friendly object ${coords}`);
-//         return;
-//     }
-
-//     const coords = `${planet.position.v} - ${planet.position.h}`;
-
-//     if (!planet.isBase) {
-//         // Non-base planet: 25% chance to reduce builds (Fortran: iran(4) == 4)
-//         if (Math.floor(Math.random() * 4) === 0) { // 1/4 chance
-//             planet.builds = Math.max(0, planet.builds - 1);
-//         }
-
-//         const message = formatTorpedoPlanetHit({
-//             attackerName: attacker.ship.name ?? "Unknown",
-//             planet,
-//             remainingBuilds: planet.builds,
-//             outputLevel: attacker.settings.output
-//         });
-//         sendMessageToClient(attacker, message);
-
-//         // Planet destroyed
-//         if (planet.builds <= 0) {
-//             planet.builds = 0;
-//             pointsManager.addPlanetsDestroyed(1, attacker, attacker.ship.side); // -1000
-//             const planetIndex = planets.indexOf(planet);
-//             if (planetIndex !== -1) {
-//                 planets.splice(planetIndex, 1);
-//             }
-//             sendMessageToClient(attacker, `Planet at ${coords} destroyed!`);
-//             handleUndockForAllShipsAfterPortDestruction(planet);
-//             checkEndGame();
-//         }
-//     } else {
-//         // Base: Use energy-based damage (TORDAM)
-//         const baseArray = planet.side === "FEDERATION" ? bases.federation : bases.empire;
-//         const base = baseArray.find(b => b.position.v === planet.position.v && b.position.h === planet.position.h);
-//         if (!base) return;
-
-//         // Distress call if undamaged (Fortran: base(j,3,nplc-2) == 1000)
-//         if (base.energy === 1000) {
-//             const distressMsg = attacker.settings.output === "SHORT"
-//                 ? `BASE DST @${coords}`
-//                 : `Base at ${coords} is under attack by torpedo!`;
-//             sendMessageToClient(attacker, distressMsg);
-//             sendMessageToOthersWithFormat(attacker, (recipient) => {
-//                 const formatted = ocdefCoords("ABSOLUTE", recipient.ship?.position ?? { v: 0, h: 0 }, planet.position);
-//                 return recipient.settings.output === "SHORT"
-//                     ? `BASE DST @${formatted}`
-//                     : `Base at ${formatted} is under attack by torpedo!`;
-//             });
-//         }
-
-//         // Damage calculation (from TORDAM)
-//         const hit = 4000 + 4000 * Math.random(); // 4000–8000
-//         const hita = hit * (1000 - base.energy) * 0.001; // Effective damage after shields
-//         base.energy = Math.max(0, Math.floor(base.energy - (hit * Math.max(base.energy * 0.001, 0.1) + 10) * 0.03));
-
-//         // Add damage-based points (Fortran: tpoint(KPBDAM) += hita)
-//         pointsManager.addDamageToBases(hita, attacker, attacker.ship.side);
-
-//         const message = formatTorpedoPlanetHit({
-//             attackerName: attacker.ship.name ?? "Unknown",
-//             planet,
-//             remainingBuilds: 0, // No builds for bases (Fortran doesn't use builds)
-//             outputLevel: attacker.settings.output
-//         });
-//         sendMessageToClient(attacker, message);
-
-//         // Critical hit (10% chance, Fortran: iran(10) == 10)
-//         if (Math.floor(Math.random() * 10) === 0) {
-//             base.energy = Math.max(0, base.energy - (50 + Math.random() * 100));
-//         }
-
-//         // Base destruction (energy <= 0)
-//         if (base.energy <= 0) {
-//             base.energy = 0;
-//             planet.isBase = false;
-//             const baseIdx = baseArray.indexOf(base);
-//             if (baseIdx !== -1) baseArray.splice(baseIdx, 1);
-//             pointsManager.addBasesBuilt(-1, attacker, attacker.ship.side); // -10000
-//             sendMessageToClient(attacker, `Base at ${coords} destroyed!`);
-//             handleUndockForAllShipsAfterPortDestruction(planet);
-//             checkEndGame();
-//         }
-//     }
-// }
-
-// export function applyTorpedoBaseDamage(attacker: Player, base: Planet, n: number): void {
-//     if (!attacker.ship) {
-//         sendMessageToClient(attacker, `You must be in a ship to fire torpedoes.`);
-//         return;
-//     }
-//     if (base.side == attacker.ship.side) {
-//         const coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, base.position);
-//         sendMessageToClient(attacker, `Weapons Officer: Captain, torpedo ${n} neutralized by friendly object ${coords}`);
-//         return;
-//     }
-//     const hit = 4000 + 4000 * Math.random();
-//     const rana = Math.random();
-
-//     if (base.energy === DEFAULT_BASE_ENERGY && !base.hasCriedForHelp) {
-//         base.hasCriedForHelp = true;
-//         base.callForHelp(base.position.v, base.position.h, base.side);
-//     }
-
-//     const { effectiveDamage, shieldLoss } = calculateShieldedDamage(hit, base.energy, 1000);
-//     base.energy = Math.max(0, base.energy - shieldLoss);
-
-//     const isCritical = effectiveDamage * (rana + 0.1) >= 1700;
-//     const randomKill = Math.floor(Math.random() * 10) === 0;
-
-//     const coords = `${base.position.v} - ${base.position.h}`;
-//     const damageMessage = formatTorpedoBaseHit({
-//         attackerName: attacker.ship.name ?? "Unknown",
-//         base,
-//         damage: hit,
-//         outputLevel: attacker.settings.output
-//     });
-
-//     sendMessageToClient(attacker, damageMessage);
-
-//     // destroy base
-//     if (base.energy <= 0 || (isCritical && randomKill)) {
-//         const baseList = base.side === "FEDERATION" ? bases.federation : bases.empire;
-//         const index = baseList.indexOf(base);
-//         if (index !== -1) baseList.splice(index, 1);
-//         //removeFromMemory(base); TODO
-//         pointsManager.addBasesBuilt(1, attacker, attacker.ship.side);
-//         sendMessageToClient(attacker, `The ${base.side} base at ${coords} has been destroyed!`);
-
-//         handleUndockForAllShipsAfterPortDestruction(base);
-
-//         sendMessageToClient(attacker, "Base destroyed.");
-
-//         checkEndGame();
-//     } else {
-//         sendMessageToClient(attacker, "Base damaged.");
-//     }
-// }
-
-// export function applyTorpedoShipDamage(
-//     target: Player,
-//     attacker: Player | Planet,
-//     rawDamage: number,
-//     allowDeviceCrit: boolean = true,
-//     n: number = 1
-// ): void {
-//     if (!target.ship || (attacker instanceof Player && !attacker.ship)) {
-//         return;
-//     }
-
-//     if (
-//         (attacker instanceof Player && attacker.ship && target.ship.side === attacker.ship.side) ||
-//         (attacker instanceof Planet && target.ship.side === attacker.side)
-//     ) {
-//         if (attacker instanceof Player && attacker.ship) {
-//             const coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, { v: target.ship.position.v, h: target.ship.position.h });
-//             sendMessageToClient(attacker, `Weapons Officer: Captain, torpedo ${n} neutralized by friendly object ${coords}`);
-//         }
-//         return;
-
-//     }
-//     const shieldLevel = target.ship.shieldEnergy;
-//     let finalDamage = rawDamage;
-
-//     if (target.ship.shieldsUp && shieldLevel > 0) {
-//         const { effectiveDamage, shieldLoss } = calculateShieldedDamage(rawDamage, shieldLevel, MAX_SHIELD_ENERGY);
-//         finalDamage = effectiveDamage;
-//         target.ship.shieldEnergy = Math.max(0, shieldLevel - shieldLoss);
-//     }
-
-//     if (attacker instanceof Player && attacker.ship) {
-//         if (target.ship.romulanStatus?.isRomulan) {
-//             pointsManager.addDamageToRomulans(finalDamage, attacker, attacker.ship.side);
-//         } else {
-//             pointsManager.addDamageToEnemies(finalDamage, attacker, attacker.ship.side);
-//         }
-//     }
-
-//     target.ship.energy -= finalDamage;
-//     target.ship.damage += finalDamage / 2;
-
-//     // Critical hit to a random device
-//     if (allowDeviceCrit && Math.random() < 0.2) {
-//         const deviceKeys = Object.keys(target.ship.devices) as (keyof typeof target.ship.devices)[];
-//         const randomDevice = deviceKeys[Math.floor(Math.random() * deviceKeys.length)];
-//         const critDamage = Math.floor(finalDamage * 0.5);
-//         target.ship.devices[randomDevice] = Math.min(target.ship.devices[randomDevice] + critDamage, 1000);
-//         addPendingMessage(target, `CRITICAL HIT: ${randomDevice} damaged(${critDamage})!`);
-//     }
-
-//     const attackerName = attacker instanceof Player
-//         ? attacker.ship?.name ?? "Unknown"
-//         : `${attacker.side} ${"builds" in attacker ? "planet" : "starbase"} at ${attacker.position.v} - ${attacker.position.h}`;
-
-//     const attackerOutputLevel = attacker instanceof Player ? attacker.settings.output : "LONG";
-//     const targetOutputLevel = target.settings.output;
-//     const targetPos = target.ship.position;
-
-//     const attackerMessage = formatTorpedoShipHit({
-//         attackerName,
-//         targetName: target.ship.name ?? "Unknown",
-//         targetPos,
-//         damage: finalDamage,
-//         outputLevel: attackerOutputLevel
-//     });
-
-//     const targetMessage = formatTorpedoShipHit({
-//         attackerName,
-//         targetName: target.ship.name ?? "Unknown",
-//         targetPos,
-//         damage: finalDamage,
-//         outputLevel: targetOutputLevel
-//     });
-
-//     if (attacker instanceof Player) {
-//         sendMessageToClient(attacker, attackerMessage);
-//     }
-//     addPendingMessage(target, targetMessage);
-
-//     // Handle ship destruction
-//     if (target.ship.energy <= 0 || target.ship.damage >= DESTRUCTION_DAMAGE_THRESHOLD) {
-
-//         sendMessageToClient(target, `You have been destroyed by ${attackerName}.`, true, false); // sendmessage given needs to be delivered.
-//         removePlayerFromGame(target);
-//         sendMessageToClient(target, ``, true, true); // sendmessage given needs to be delivered.
-
-
-
-//         if (attacker instanceof Player) {
-//             if (attacker.ship) {
-//                 pointsManager.addEnemiesDestroyed(1, attacker, attacker.ship.side);
-//             }
-//             sendMessageToClient(attacker, `${target.ship.name} destroyed by torpedo hit!`);
-//         }
-
-//     }
-// }
-
-// export function formatTorpedoShipHit({
-//     attackerName,
-//     targetName,
-//     targetPos,
-//     damage,
-//     outputLevel
-// }: {
-//     attackerName: string;
-//     targetName: string;
-//     targetPos: { v: number; h: number };
-//     damage: number;
-//     outputLevel: OutputSetting;
-// }): string {
-//     const coords = `${targetPos.v} - ${targetPos.h}`;
-//     const dmg = Math.round(damage);
-
-//     switch (outputLevel) {
-//         case "SHORT":
-//             return `${attackerName[0]} > ${targetName[0]} @${coords} ${dmg}`;
-//         case "MEDIUM":
-//             return `${attackerName} torpedo hit ${targetName} @${coords} ${dmg}`;
-//         case "LONG":
-//         default:
-//             return `${attackerName} fired torpedo and hit ${targetName} at ${coords} for ${dmg} damage.`;
-//     }
-// }
-
-// export function formatTorpedoBaseHit({
-//     attackerName,
-//     base,
-//     damage,
-//     outputLevel
-// }: {
-//     attackerName: string;
-//     base: Planet;
-//     damage: number;
-//     outputLevel: OutputSetting;
-// }): string {
-//     const coords = `${base.position.v} -${base.position.h} `;
-//     const dmg = Math.round(damage);
-
-//     switch (outputLevel) {
-//         case "SHORT":
-//             return `${attackerName[0]} > ${base.side[0]}B @${coords} ${dmg} `;
-//         case "MEDIUM":
-//             return `${attackerName} hit ${base.side} base @${coords} ${dmg} `;
-//         case "LONG":
-//         default:
-//             return `${attackerName} fired torpedo at ${base.side} base at ${coords}, causing ${dmg} damage.`;
-//     }
-// }
-
-// export function formatTorpedoPlanetHit({
-//     attackerName,
-//     planet,
-//     remainingBuilds,
-//     outputLevel
-// }: {
-//     attackerName: string;
-//     planet: Planet;
-//     remainingBuilds: number;
-//     outputLevel: OutputSetting;
-// }): string {
-//     const coords = `${planet.position.v} -${planet.position.h}`;
-
-//     switch (outputLevel) {
-//         case "SHORT":
-//             return `${attackerName[0]} > P @${coords} ${remainingBuilds} B`;
-//         case "MEDIUM":
-//             return `${attackerName} torpedoed planet @${coords}, builds left: ${remainingBuilds} `;
-//         case "LONG":
-//         default:
-//             return `${attackerName} struck planet at ${coords} with torpedo. Remaining builds: ${remainingBuilds} `;
-//     }
-// }
-
-// function calculateShieldedDamage(
-//     rawDamage: number,
-//     shieldValue: number,
-//     maxShieldValue: number = MAX_SHIELD_ENERGY
-// ): {
-//     effectiveDamage: number;
-//     shieldLoss: number;
-// } {
-//     const shieldPercent = Math.max((1000 * shieldValue) / maxShieldValue, 0);
-//     const shieldFactor = Math.max(shieldPercent * 0.001, 0.1);
-//     const effectiveDamage = rawDamage * (1000 - shieldPercent) * 0.001;
-//     const shieldLoss = (rawDamage * shieldFactor + 10) * 0.03;
-
-//     return { effectiveDamage, shieldLoss };
-// }
 
 function repeatOrTrim<T>(items: T[], n: number): T[] {
     const result: T[] = [];
@@ -817,19 +424,6 @@ function formatTorpedoExplosion(player: Player, v: number, h: number): string {
     }
 }
 
-// // function formatTorpedoMissed(player: Player, v: number, h: number): string {
-// //     const coords = ocdefCoords(player.settings.ocdef, player.ship?.position ?? { v: 0, h: 0 }, { v, h });
-
-// //     switch (player.settings.output) {
-// //         case "SHORT":
-// //             return `F > ${coords} Miss`;
-// //         case "MEDIUM":
-// //             return `Torpedo missed at ${coords} `;
-// //         case "LONG":
-// //         default:
-// //             return `Torpedo reached ${coords} but hit nothing.`;
-// //     }
-// // }
 
 function formatTorpedoBroadcast(player: Player, v: number, h: number): string {
     const coords = ocdefCoords(player.settings.ocdef, player.ship?.position ?? { v: 0, h: 0 }, { v, h });
@@ -844,20 +438,17 @@ function formatTorpedoBroadcast(player: Player, v: number, h: number): string {
     }
 }
 
-// Torpedo damage (TORDAM entry point)
+const CRIT_CHANCE = 0.20;  // TODO should this be in global?
+// Torpedo damage (TORDAM entry point) — parity-focused
+// Torpedo damage (TORDAM entry point) — parity-focused
 export function torpedoDamage(
     source: Player | Planet,
     target: Player | Planet
 ): { hita: number; isDestroyed: boolean; shieldStrength: number; shieldsUp: boolean; critdm: number } {
-    let iwhat = 2;
-    let hita = 0.0;
-    let rand = Math.random();
-    let rana = Math.random();
-    let hit = 0.0;
-
-    // Validation
+    // --- Validation (25k fatal threshold for ships; bases only for planets) ---
     if (target instanceof Player) {
-        if (!target.ship || target.ship.damage >= 2500 || target.ship.energy <= 0) {
+        const ship = target.ship;
+        if (!ship || ship.energy <= 0 || ship.damage >= SHIP_FATAL_DAMAGE) {
             return { hita: 0, isDestroyed: false, shieldStrength: 0, shieldsUp: false, critdm: 0 };
         }
     } else if (target instanceof Planet) {
@@ -868,51 +459,271 @@ export function torpedoDamage(
         return { hita: 0, isDestroyed: false, shieldStrength: 0, shieldsUp: false, critdm: 0 };
     }
 
-    // Base hit
-    hit = 4000.0 + 4000.0 * Math.random();
+    // --- Helpers for 0..1000 shield math parity ---
+    const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+    const toPct = (energy: number, max: number) => (max > 0 ? clamp((energy / max) * 1000, 0, 1000) : 0);
+    const fromPct = (pct: number, max: number) => clamp((pct / 1000) * max, 0, max);
 
-    // Shield deflection
-    let shieldStrength = target instanceof Player && target.ship ? target.ship.shieldEnergy : (target as Planet).energy;
-    rand = rana - (shieldStrength * 0.001 * (rand - 0.5)) + 0.1;
-    if (rand <= 0.0) {
-        iwhat = 3;
-        hita = 0;
-        if (target instanceof Player && target.ship) {
-            target.ship.shieldEnergy = Math.max(0, target.ship.shieldEnergy - 50.0 * rana);
-            addPendingMessage(target, `Your ship's shields deflected a torpedo, losing ${Math.round(50.0 * rana)} shield energy!`);
-        } else if (target instanceof Planet) {
-            target.energy = Math.max(0, target.energy - 50.0 * rana);
-            //addPendingMessage(null, `${target.side} starbase at ${target.position.v}-${target.position.h} deflected a torpedo, losing ${Math.round(50.0 * rana)} shield energy!`);
+    // --- Pull shield energy + max and convert to 0..1000 scale ---
+    const isPlayer = target instanceof Player && !!target.ship;
+    const isBase = target instanceof Planet && target.isBase;
+
+    let rawShieldEnergy = isPlayer ? (target as Player).ship!.shieldEnergy : (target as Planet).energy;
+    const rawShieldMax = isPlayer ? MAX_SHIELD_ENERGY : 1000; // bases use 0..1000 intrinsically
+    const shieldsUp = isPlayer ? (target as Player).ship!.shieldsUp : true;
+
+    let shieldPct = toPct(rawShieldEnergy, rawShieldMax);
+
+    // --- Base torpedo hit: 4000..8000 ---
+    const hit = 4000.0 + 4000.0 * Math.random();
+
+    // --- Deflection test (uses 0..1000 shield percent) ---
+    const rana = Math.random(); // “rana”
+    const rand = Math.random(); // “rand”
+    const rand2 = rana - (shieldPct * 0.001 * rand) + 0.1;
+
+    if (rand2 <= 0.0) {
+        // Deflected: reduce shields by 50 * rana (on percent scale)
+        shieldPct = clamp(shieldPct - 50.0 * rana, 0, 1000);
+        rawShieldEnergy = fromPct(shieldPct, rawShieldMax);
+
+        if (isPlayer) {
+            (target as Player).ship!.shieldEnergy = rawShieldEnergy;
+            addPendingMessage(target as Player, `Your ship's shields deflected a torpedo, losing ${Math.round(50.0 * rana)} shield units!`);
+        } else {
+            (target as Planet).energy = rawShieldEnergy;
         }
+
         return {
             hita: 0,
             isDestroyed: false,
-            shieldStrength: target instanceof Player && target.ship ? target.ship.shieldEnergy : (target as Planet).energy,
-            shieldsUp: target instanceof Player && target.ship ? target.ship.shieldsUp : true,
+            shieldStrength: rawShieldEnergy,
+            shieldsUp,
             critdm: 0
         };
     }
 
-    // Damage calculation
-    if (target instanceof Player && target.ship) {
-        hita = hit * (1000.0 - target.ship.shieldEnergy) * 0.001;
-        const shieldFactor = Math.max(target.ship.shieldEnergy * 0.001, 0.1);
-        target.ship.shieldEnergy = Math.max(
-            0,
-            target.ship.shieldEnergy - (hit * shieldFactor + 10) * 0.03
-        );
-        addPendingMessage(target, `${source instanceof Player && source.ship ? source.ship.name : (source instanceof Planet ? source.side : 'Unknown')} hits your ship with a torpedo for ${Math.round(hita)} damage!`);
-    } else if (target instanceof Planet && target.isBase) {
-        hita = hit * (1000 - target.energy) * 0.001;
-        const shieldFactor = Math.max(target.energy * 0.001, 0.1);
-        target.energy = Math.max(
-            0,
-            target.energy - (hit * shieldFactor + 10) * 0.03
-        );
-        //addPendingMessage(null, `${source instanceof Player ? source.ship.name : source.side} hits ${target.side} starbase at ${target.position.v}-${target.position.h} with a torpedo for ${Math.round(hita)} damage!`);
+    // --- Damage calculation with shield absorption + drain (parity) ---
+    let hita: number;
+    const prevShieldPct = shieldPct; // for base-collapse detection
+
+    if (shieldPct > 0) {
+        // portion that gets through
+        hita = hit * (1000.0 - shieldPct) * 0.001;
+
+        // drain shields
+        const absorptionFactor = Math.max(shieldPct * 0.001, 0.1);
+        shieldPct = shieldPct - (hit * absorptionFactor + 10.0) * 0.03;
+        if (shieldPct < 0) shieldPct = 0;
+
+        // write back updated shields
+        rawShieldEnergy = fromPct(shieldPct, rawShieldMax);
+        if (isPlayer) {
+            (target as Player).ship!.shieldEnergy = rawShieldEnergy;
+        } else {
+            (target as Planet).energy = rawShieldEnergy;
+        }
+    } else {
+        // No shields: full hit goes to hull/energy
+        hita = hit;
     }
 
-    // Common logic
-    const result = applyDamage(source, target, hita, rana);
-    return result || { hita: 0, isDestroyed: false, shieldStrength: 0, shieldsUp: false, critdm: 0 };
+    // --- Base collapse crit/kill BEFORE hull (parity) -------------------
+    let critdm = 0;
+    if (isBase && prevShieldPct > 0 && shieldPct === 0) {
+        const rana2 = Math.random();
+        const extra = 50 + Math.floor(100 * rana2); // 50..149
+        (target as Planet).energy = Math.max(0, (target as Planet).energy - extra);
+        critdm = 1;
+
+        if (Math.random() < 0.10 || (target as Planet).energy <= 0) {
+            // base kill (collapse path) + scoring
+            if (source instanceof Player && source.ship) {
+                const atkSide = source.ship.side;
+                const tgtSide = (target as Planet).side;
+                const sign = (atkSide !== tgtSide) ? 1 : -1;
+
+                (pointsManager as unknown as ScoringAPI)
+                    .addDamageToBases?.(10000 * sign, source, atkSide);
+
+                // Base kills aren’t counted in applyDamage, so keep this here
+                (pointsManager as unknown as ScoringAPI)
+                    .addEnemiesDestroyed?.(1, source, atkSide);
+            }
+
+            const arr = (target as Planet).side === "FEDERATION" ? bases.federation : bases.empire;
+            const idx = arr.indexOf(target as Planet);
+            if (idx !== -1) arr.splice(idx, 1);
+            (target as Planet).isBase = false;
+            (target as Planet).builds = 0;
+            (target as Planet).energy = 0;
+            handleUndockForAllShipsAfterPortDestruction(target as Planet);
+
+            return {
+                hita, // damage inflicted this volley
+                isDestroyed: true,
+                shieldStrength: 0,
+                shieldsUp: false,
+                critdm
+            };
+        }
+    }
+
+    // --- Ship device crit + jitter BEFORE hull (ships only) -------------
+    if (isPlayer && Math.random() < CRIT_CHANCE) {
+        const crit = applyShipCriticalParity(target as Player, hita);
+        hita = crit.hita;
+        critdm = Math.max(critdm, crit.critdm);
+
+        const deviceKeys = Object.keys((target as Player).ship!.devices);
+        const deviceName = deviceKeys[crit.critdv]?.toUpperCase?.() ?? "DEVICE";
+        addPendingMessage(target as Player, `CRITICAL HIT: ${deviceName} damaged by ${crit.critdm}!`);
+    }
+
+    // --- Apply the computed damage via shared routine -------------------
+    const result = applyDamage(source, target, hita, rana) || {
+        hita,
+        isDestroyed: false,
+        shieldStrength: isPlayer ? (target as Player).ship!.shieldEnergy : (target as Planet).energy,
+        shieldsUp,
+        critdm: 0
+    };
+
+    // ✅ Award DAMAGE POINTS based on the actual applied hit (after all effects)
+    if (source instanceof Player && source.ship && result.hita > 0) {
+        const atkSide = source.ship.side;
+
+        if (isBase) {
+            const sign = (atkSide !== (target as Planet).side) ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI)
+                .addDamageToBases?.(Math.round(result.hita) * sign, source, atkSide);
+        } else if (isPlayer) {
+            const sign = (atkSide !== (target as Player).ship!.side) ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI)
+                .addDamageToEnemies?.(Math.round(result.hita) * sign, source, atkSide);
+        }
+    }
+
+
+    // ✅ KILL BONUSES (player attackers only), after result state is known
+    if (source instanceof Player && source.ship && result.isDestroyed) {
+        const atkSide = source.ship.side;
+
+        if (isPlayer) {
+            const sign = (atkSide !== (target as Player).ship!.side) ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI)
+                .addDamageToEnemies?.(5000 * sign, source, atkSide);
+            // NOTE: do NOT increment kill count here — applyDamage(...) already did it for ship kills
+        } else if (isBase) {
+            const sign = (atkSide !== (target as Planet).side) ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI)
+                .addDamageToBases?.(10000 * sign, source, atkSide);
+            // Base kills aren’t counted in applyDamage, so keep this here
+            (pointsManager as unknown as ScoringAPI)
+                .addEnemiesDestroyed?.(1, source, atkSide);
+        }
+    }
+
+
+    // surface crit flag (device/base crit)
+    result.critdm = Math.max(result.critdm || 0, critdm);
+
+    // ensure shieldsUp reflects current true state in return
+    result.shieldsUp = isPlayer ? (!!(target as Player).ship!.shieldsUp && (target as Player).ship!.shieldEnergy > 0) : true;
+    result.shieldStrength = isPlayer ? (target as Player).ship!.shieldEnergy : (target as Planet).energy;
+
+    return result;
 }
+
+
+
+// /**
+//  * TORDAM-parity core for torpedo impact against shields/hull.
+//  * Internally uses 0..1000 shield scale and converts back to your storage.
+//  */
+// function tordamCore(params: {
+//     rawShieldEnergy: number; // current stored shield/energy
+//     rawShieldMax: number;    // players: MAX_SHIELD_ENERGY; bases: 1000
+// }): { hita: number; newShieldEnergy: number } {
+//     const { rawShieldEnergy, rawShieldMax } = params;
+
+//     const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+//     const toPct = (energy: number, max: number) =>
+//         max > 0 ? clamp((energy / max) * 1000, 0, 1000) : 0;
+//     const fromPct = (pct: number, max: number) => clamp((pct / 1000) * max, 0, max);
+
+//     // Torpedo base impact (Fortran: 4000..8000 range)
+//     let hit = 4000 + 4000 * Math.random();
+
+//     // Shields in 0..1000 scale
+//     let shieldPct = toPct(rawShieldEnergy, rawShieldMax);
+
+//     // If shields are up, absorb part of the hit and drain shields
+//     // Absorb: hit = (1000 - shield%) * hit * 0.001
+//     // Drain:  shield% -= (hit * amax1(shield%*0.001, 0.1) + 10) * 0.03
+//     if (shieldPct > 0) {
+//         hit = (1000 - shieldPct) * hit * 0.001;
+
+//         const absorptionFactor = Math.max(shieldPct * 0.001, 0.1);
+//         shieldPct = shieldPct - (hit * absorptionFactor + 10) * 0.03;
+//         if (shieldPct < 0) shieldPct = 0;
+//     }
+
+//     const hita = hit; // final torpedo damage post-absorption
+//     return { hita, newShieldEnergy: fromPct(shieldPct, rawShieldMax) };
+// }
+
+// Shared damage resolver for phasers / torpedoes
+export function applyDamage(
+    source: Player | Planet,
+    target: Player | Planet,
+    hita: number,
+    rana: number
+): { hita: number; isDestroyed: boolean; shieldStrength: number; shieldsUp: boolean; critdm: number } {
+    void rana;
+    const critdm = 0;
+    let isDestroyed = false;
+
+    // Apply damage to hull/energy
+    if (target instanceof Player && target.ship) {
+        target.ship.energy -= hita;
+        target.ship.damage += hita / 2;
+        if (target.ship.energy <= 0 || target.ship.damage >= SHIP_FATAL_DAMAGE) {
+            isDestroyed = true;
+            removePlayerFromGame(target);
+            if (source instanceof Player && source.ship) {
+                pointsManager.addEnemiesDestroyed(1, source, source.ship.side);
+            }
+        }
+        return {
+            hita,
+            isDestroyed,
+            shieldStrength: target.ship.shieldEnergy,
+            shieldsUp: target.ship.shieldsUp,
+            critdm
+        };
+    } else if (target instanceof Planet && target.isBase) {
+        target.energy -= hita;
+        if (target.energy <= 0) {
+            isDestroyed = true;
+            const baseArray = target.side === "FEDERATION" ? bases.federation : bases.empire;
+            const idx = baseArray.indexOf(target);
+            if (idx !== -1) baseArray.splice(idx, 1);
+            target.isBase = false;
+            target.energy = 0;
+            target.builds = 0;
+            handleUndockForAllShipsAfterPortDestruction(target);
+        }
+        return {
+            hita,
+            isDestroyed,
+            shieldStrength: target.energy,
+            shieldsUp: true,
+            critdm
+        };
+    }
+
+    // Default fallback (shouldn't hit)
+    return { hita, isDestroyed, shieldStrength: 0, shieldsUp: false, critdm };
+}
+

@@ -1,6 +1,7 @@
 import { players } from "./game.js";
 import { chebyshev } from "./coords.js";
 import { Player } from "./player.js";
+import { Planet } from "./planet.js";
 
 export type OutputVariants = {
     SHORT: string;
@@ -52,9 +53,13 @@ export function sendMessageToClient(
     }
 }
 
-export function sendMessageToOthers(player: Player, message: string, range: number = 10): void {
-    if (!player.ship) return;
-    const origin = player.ship.position;
+export function sendMessageToOthers(player: Player | Planet, message: string, range: number = 10): void {
+    let origin = { v: 0, h: 0 };
+    if (player instanceof Player && player.ship) {
+        origin = player.ship.position;
+    } else if (player instanceof Planet) {
+        origin = player.position;
+    }
 
     for (const other of players) {
         if (other === player || !other.ship || !other.radioOn) continue;

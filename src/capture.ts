@@ -9,8 +9,9 @@ import {
 } from "./communication.js";
 import { getCoordsFromCommandArgs, ocdefCoords, chebyshev } from "./coords.js";
 import { Player } from "./player.js";
-import { planets, pointsManager, players, blackholes, stars } from "./game.js";
-import { applyDamage } from "./phaser.js";
+import { planets, pointsManager, players, blackholes, stars, checkEndGame } from "./game.js";
+import { applyDamage } from "./torpedo.js"; // adjust path if your applyDamage lives elsewhere
+
 
 //  import { starbasePhaserDefense } from "./phaser.js"; //TODO: verify this isn't a real part of classic game
 
@@ -159,9 +160,19 @@ export function captureCommand(player: Player, command: Command, done?: () => vo
             LONG: `captured.`,
         });
 
-        const damage = applyDamage(planet, player, hit, Math.random());
-        if (damage) {
-            sendMessageToClient(player, `Your ship has been damaged !`);
+        const res = applyDamage(planet, player, hit, Math.random());
+
+        // Message only if something actually landed
+        if (res.hita > 0) {
+            sendMessageToClient(
+                player,
+                `Planetary resistance hit your ship for ${Math.round(res.hita)} damage.`
+            );
+        }
+
+        // If the capture backlash killed the player, advance endgame checks
+        if (res.isDestroyed) {
+            checkEndGame();
         }
 
         done?.();
