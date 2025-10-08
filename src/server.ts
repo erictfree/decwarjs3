@@ -1,7 +1,52 @@
+// server.ts (excerpt) — run your telnet server as usual, then:
+import { startApiServer } from "./api/server.js";
+import type { GameStateProvider } from "./api/provider.js";
+
+import { planets, stars, blackholes, bases, players } from "./game.js";
+import {
+  toSummaryDTO,
+  toPlayerDTO,
+  toPlanetDTO,
+  toStarDTO,
+  toBlackholeDTO,
+  toBaseDTO,
+} from "./api/dto.js";
+import type { Ship } from "./ship.js";
+
+// Build the read-only provider against your live state
+const provider: GameStateProvider = {
+  getSummary: () =>
+    toSummaryDTO({
+      players,
+      planets,
+      stars,
+      blackholes,
+      federationBases: bases.federation,
+      empireBases: bases.empire,
+    }),
+
+  listPlayers: () =>
+    players
+      .filter((p): p is Player & { ship: Ship } => Boolean(p.ship))
+      .map(toPlayerDTO),
+
+  listPlanets: () => planets.map(toPlanetDTO),
+  listStars: () => stars.map(toStarDTO),
+  listBlackholes: () => blackholes.map(toBlackholeDTO),
+  listBases: () => [...bases.federation, ...bases.empire].map(toBaseDTO),
+};
+
+// Start the API if desired (env or explicit)
+if (process.env.API_PORT) {
+  startApiServer(provider);
+}
+
+
+
 import * as net from 'net';
 import { config } from 'dotenv';
 import { Player } from './player.js';
-import { players, limbo } from './game.js';
+import { limbo } from './game.js';
 import { queueCommands } from './command.js';
 import { MAX_PLAYERS } from './settings.js';
 import { swapPlayerForBackhole } from './gripe.js';
