@@ -1,30 +1,37 @@
 // romulan.ts — FORTRAN-parity Romulan (ROMDRV/ROMTOR/ROMSTR/PHAROM/TOROM/DEADRO)
 
-import { Player } from './player.js';
-import { NullSocket } from './util/nullsocket.js';
-import { GRID_HEIGHT, GRID_WIDTH, settings } from './settings.js';
-import { players, bases, stars, pointsManager } from './game.js';
-import { addPendingMessage } from './communication.js';
-import { chebyshev, bresenhamLine, findEmptyLocation, findObjectAtPosition } from './coords.js';
-import { Planet } from './planet.js';
-import { applyPhaserDamage } from './phaser.js';
-import { torpedoDamage } from './torpedo.js';
+import { Player } from "./player.js";
+import { NullSocket } from "./util/nullsocket.js";
+import { GRID_HEIGHT, GRID_WIDTH, settings } from "./settings.js";
+import { players, bases, stars, pointsManager } from "./game.js";
+import { addPendingMessage } from "./communication.js";
+import { chebyshev, bresenhamLine, findEmptyLocation, findObjectAtPosition } from "./coords.js";
+import { Planet } from "./planet.js";
+import { applyPhaserDamage } from "./phaser.js";
+import { torpedoDamage } from "./torpedo.js";
+import { Ship } from "./ship.js";
+import { Star } from "./star.js";
+import { Blackhole } from "./blackhole.js";
 
 // ----- constants (FORTRAN-aligned) -----
 const KRANGE = 20;                  // search/notify/attack window
 const TORP_SHOTS = 3;               // ROMTOR loop id=1..3
-const PHA_PHIT = 0.4;               // FORTRAN 200 scaled to 0.4 (10x integer trick removed)
+const PHA_PHIT = 0.4;               // FORTRAN 200 -> 0.4 (removed 10x integer trick)
 const PHA_BASE_PAUSE_MS = 750;      // (slwest+1)*750 in FORTRAN; we scale by active players
 const TORP_BASE_PAUSE_MS = 1000;    // (slwest+1)*1000 in FORTRAN
 
-// active players + 1, minimum 1 — used to scale the weapon cooldown pauses
-const basePause = () =>
+// ----- small helpers -----
+const activePlayersPlusOne = () =>
     Math.max(1, players.filter(p => p.ship && p.ship.energy > 0).length + 1);
 
-// ----- FORTRAN-like RNG helper -----
-function iran(n: number): number { // 1..n inclusive
+function iran(n: number): number {
+    // 1..n inclusive (FORTRAN-like)
     return Math.floor(Math.random() * n) + 1;
 }
+
+type ScoringAPI = {
+    incrementShipsCommissioned?(side: string): void;
+};
 
 // ----- Romulan singleton state -----
 export let romulan: Player | null = null;
@@ -36,35 +43,33 @@ let rtpausUntil = 0;          // torpedo pause timestamp (ms)
 // ----- spawn cadence like ROMDRV -----
 export function maybeSpawnRomulan(): void {
     if (!settings.generated) return;
-    romcnt += 1;
-
     if (romulan && romulan.ship) return;
+
+    romcnt += 1;
 
     const numply = Math.max(1, players.filter(p => p.ship && p.ship.energy > 0).length);
 
-    // if (romcnt * 2 .lt. numply)  -> wait longer
+    // slow start: wait until roughly half a sweep has gone by
     if (romcnt * 2 < numply) return;
 
-    // if ((romcnt .lt. numply*3) .or. (iran(5) .eq. 5)) -> most cycles skip; occasional allow
-    if (romcnt < numply * 3 || iran(5) === 5) return;
+    // spawn only when enough cycles have passed AND a random gate opens
+    if (romcnt >= numply * 3 && iran(5) === 5) {
+        spawnRomulan();
+        erom = iran(200) + 200; // 201..400
 
-    // spawn
-    spawnRomulan();
-    erom = iran(200) + 200;
-
-    // notify nearby players (iwhat=11 semantics simplified)
-    if (romulan && romulan.ship) {
-        const rv = romulan.ship.position.v;
-        const rh = romulan.ship.position.h;
-        for (const p of players) {
-            if (!p.ship) continue;
-            if (chebyshev(p.ship.position, { v: rv, h: rh }) <= KRANGE) {
-                addPendingMessage(p, `Sensors: a Romulan vessel has appeared near ${rv}-${rh}!`);
+        // notify nearby players (iwhat=11 semantics simplified)
+        if (romulan?.ship) {
+            const rv = romulan.ship.position.v;
+            const rh = romulan.ship.position.h;
+            for (const p of players) {
+                if (!p.ship) continue;
+                if (chebyshev(p.ship.position, { v: rv, h: rh }) <= KRANGE) {
+                    addPendingMessage(p, `Sensors: a Romulan vessel has appeared near ${rv}-${rh}!`);
+                }
             }
         }
+        romcnt = 0;
     }
-
-    romcnt = 0;
 }
 
 // explicit spawn with placement
@@ -72,12 +77,12 @@ export function spawnRomulan(): void {
     if (romulan && romulan.ship) return;
 
     const pl = new Player(new NullSocket());
-    pl.settings.name = 'ROMULAN';
+    pl.settings.name = "ROMULAN";
     if (pl.ship) {
-        pl.ship.name = 'ROMULAN';
-        pl.ship.side = 'ROMULAN';
+        pl.ship.name = "ROMULAN";
+        pl.ship.side = "ROMULAN";
         pl.ship.romulanStatus = { isRomulan: true, isRevealed: false, cloaked: true };
-        pl.ship.energy = 0;          // not used for Romulan durability (erom is used)
+        pl.ship.energy = 0;          // not used for durability (we use erom)
         pl.ship.damage = 0;
         pl.ship.shieldEnergy = 0;
 
@@ -86,9 +91,8 @@ export function spawnRomulan(): void {
             pl.ship.position = pos;
             players.push(pl);
 
-            // optional scoring hook, typed without `any`
-            (pointsManager as unknown as { incrementShipsCommissioned?(side: string): void })
-                .incrementShipsCommissioned?.('ROMULAN');
+            // optional scoring hook (no `any`)
+            (pointsManager as unknown as ScoringAPI).incrementShipsCommissioned?.("ROMULAN");
 
             romulan = pl;
         }
@@ -97,7 +101,7 @@ export function spawnRomulan(): void {
 
 // ----- main per-tick update (ROMDRV core) -----
 export function updateRomulan(): void {
-    if (!romulan || !romulan.ship) return;
+    if (!romulan?.ship) return;
 
     // occasional speech
     if (iran(10) === 1) romulanSpeaks();
@@ -126,11 +130,11 @@ export function updateRomulan(): void {
 
 // ----- target selection like ROMDRV: ships first, then bases, within KRANGE -----
 type Target =
-    | { kind: 'ship'; player: Player; distance: number }
-    | { kind: 'base'; planet: Planet; distance: number };
+    | { kind: "ship"; player: Player; distance: number }
+    | { kind: "base"; planet: Planet; distance: number };
 
 function findClosestTargetInRange(): Target | null {
-    if (!romulan || !romulan.ship) return null;
+    if (!romulan?.ship) return null;
     const rpos = romulan.ship.position;
 
     let best: Target | null = null;
@@ -139,19 +143,19 @@ function findClosestTargetInRange(): Target | null {
     for (const p of players) {
         if (!p.ship) continue;
         if (p === romulan) continue;
-        if (p.ship.side !== 'FEDERATION' && p.ship.side !== 'EMPIRE') continue;
+        if (p.ship.side !== "FEDERATION" && p.ship.side !== "EMPIRE") continue;
         const d = chebyshev(p.ship.position, rpos);
         if (d > KRANGE) continue;
-        if (!best || d < best.distance) best = { kind: 'ship', player: p, distance: d };
+        if (!best || d < best.distance) best = { kind: "ship", player: p, distance: d };
     }
 
     // enemy bases
-    for (const side of ['FEDERATION', 'EMPIRE'] as const) {
-        const list = side === 'FEDERATION' ? bases.federation : bases.empire;
+    for (const side of ["FEDERATION", "EMPIRE"] as const) {
+        const list = side === "FEDERATION" ? bases.federation : bases.empire;
         for (const base of list) {
             const d = chebyshev(base.position, rpos);
             if (d > KRANGE) continue;
-            if (!best || d < best.distance) best = { kind: 'base', planet: base, distance: d };
+            if (!best || d < best.distance) best = { kind: "base", planet: base, distance: d };
         }
     }
 
@@ -160,14 +164,17 @@ function findClosestTargetInRange(): Target | null {
 
 // ----- phaser path (PHADAM parity via applyPhaserDamage) -----
 function fireRomulanPhasers(target: Target): void {
-    if (!romulan || !romulan.ship) return;
+    if (!romulan?.ship) return;
 
     // base “calls for help” when first hit at full shields
-    if (target.kind === 'base' && target.planet.energy === 1000) {
+    if (target.kind === "base" && target.planet.energy === 1000) {
         for (const p of players) {
             if (!p.ship) continue;
             if (p.ship.side === target.planet.side) {
-                addPendingMessage(p, `Starbase ${target.planet.position.v}-${target.planet.position.h} is under Romulan phaser fire!`);
+                addPendingMessage(
+                    p,
+                    `Starbase ${target.planet.position.v}-${target.planet.position.h} is under Romulan phaser fire!`
+                );
             }
         }
     }
@@ -175,28 +182,26 @@ function fireRomulanPhasers(target: Target): void {
     // fire (let phaser core handle distance/absorption)
     const res = applyPhaserDamage(
         romulan,
-        target.kind === 'ship' ? target.player : target.planet,
+        target.kind === "ship" ? target.player : target.planet,
         PHA_PHIT
     );
 
     // cooldown: rppaus = now + (active+1)*750
-    rppausUntil = Date.now() + basePause() * PHA_BASE_PAUSE_MS;
+    rppausUntil = Date.now() + activePlayersPlusOne() * PHA_BASE_PAUSE_MS;
 
     // message victim
-    if (target.kind === 'ship') {
+    if (target.kind === "ship") {
         addPendingMessage(target.player, `Romulan phasers hit you for ${Math.round(res.hita)}!`);
     }
 }
 
 // ----- torpedo path (ROMSTR + ROMTOR parity) -----
 function fireRomulanTorpedoes(target: Target): void {
-    if (!romulan || !romulan.ship) return;
+    if (!romulan?.ship) return;
 
     // initial aim point
-    let aim = target.kind === 'ship'
-        ? (target.player.ship ? target.player.ship.position : null)
-        : target.planet.position;
-
+    let aim =
+        target.kind === "ship" ? (target.player.ship ? target.player.ship.position : null) : target.planet.position;
     if (!aim) return;
 
     // ROMSTR: retarget to adjacent star if present
@@ -204,23 +209,29 @@ function fireRomulanTorpedoes(target: Target): void {
 
     // ROMTOR: 3 shots with reacquire + star retarget each time
     for (let shot = 1; shot <= TORP_SHOTS; shot += 1) {
-        const hit = findObjectAtPosition(aim.v, aim.h);
+        if (!aim) break;
 
-        if (hit?.type === 'star') {
+        const found = findObjectAtPosition(aim.v, aim.h);
+        const obj = found?.obj;
+
+        if (obj instanceof Star) {
+            // Star detonation messaging (nova behavior handled elsewhere in your engine if applicable)
             if (iran(100) <= 80) {
                 addPendingMessage(romulan, `Romulan torpedo detonated near a star at ${aim.v}-${aim.h}.`);
             }
-        } else if (hit?.type === 'planet') {
-            const pl = hit.planet as Planet;
-            if (pl.isBase) {
-                torpedoDamage(romulan, pl);
+        } else if (obj instanceof Planet) {
+            if (obj.isBase) {
+                torpedoDamage(romulan, obj);
             } else {
                 // accidental planet attack: 25% chance to reduce builds by 1
-                if (iran(100) >= 75) pl.builds = Math.max(0, pl.builds - 1);
+                if (iran(100) >= 75) obj.builds = Math.max(0, obj.builds - 1);
             }
-        } else if (hit?.type === 'player') {
-            torpedoDamage(romulan, hit.player);
-        } else if (hit?.type === 'blackhole') {
+        } else if (obj instanceof Ship) {
+            const targetPlayer =
+                players.find(p => p.ship === obj) ||
+                players.find(p => p.ship && p.ship.position.v === aim!.v && p.ship.position.h === aim!.h);
+            if (targetPlayer) torpedoDamage(romulan, targetPlayer);
+        } else if (obj instanceof Blackhole) {
             addPendingMessage(romulan, `Romulan torpedo lost in a black hole near ${aim.v}-${aim.h}.`);
         }
 
@@ -229,14 +240,14 @@ function fireRomulanTorpedoes(target: Target): void {
         if (!nxt) break;
 
         let nextPos: { v: number; h: number } | null = null;
-        if (nxt.kind === 'ship' && nxt.player.ship) nextPos = nxt.player.ship.position;
-        if (nxt.kind === 'base') nextPos = nxt.planet.position;
+        if (nxt.kind === "ship" && nxt.player.ship) nextPos = nxt.player.ship.position;
+        if (nxt.kind === "base") nextPos = nxt.planet.position;
         if (!nextPos) break;
 
         aim = retargetToAdjacentStar(nextPos) ?? nextPos;
 
         // cooldown: tpaus = now + (active+1)*1000
-        rtpausUntil = Date.now() + basePause() * TORP_BASE_PAUSE_MS;
+        rtpausUntil = Date.now() + activePlayersPlusOne() * TORP_BASE_PAUSE_MS;
     }
 }
 
@@ -249,9 +260,7 @@ function retargetToAdjacentStar(pos: { v: number; h: number }): { v: number; h: 
 
     for (let v = vf; v <= vl; v += 1) {
         for (let h = hf; h <= hl; h += 1) {
-            if (stars.some(s => s.position.v === v && s.position.h === h)) {
-                return { v, h };
-            }
+            if (stars.some(s => s.position.v === v && s.position.h === h)) return { v, h };
         }
     }
     return null;
@@ -259,7 +268,7 @@ function retargetToAdjacentStar(pos: { v: number; h: number }): { v: number; h: 
 
 // ----- movement helper (safe approach) -----
 function moveToward(targetPos: { v: number; h: number }): void {
-    if (!romulan || !romulan.ship) return;
+    if (!romulan?.ship) return;
     const rpos = romulan.ship.position;
 
     const dv = targetPos.v - rpos.v;
@@ -283,7 +292,10 @@ function moveToward(targetPos: { v: number; h: number }): void {
     path.shift(); // skip start
     let blocked = false;
     for (const p of path) {
-        if (findObjectAtPosition(p.v, p.h)) { blocked = true; break; }
+        if (findObjectAtPosition(p.v, p.h)) {
+            blocked = true;
+            break;
+        }
     }
     if (blocked) {
         nv = rpos.v + sv * Math.max(0, steps - 2);
@@ -299,14 +311,21 @@ function moveToward(targetPos: { v: number; h: number }): void {
 export function romulanApproachTick(): void {
     const target = findClosestTargetInRange();
     if (!target) return;
-    const tpos = (target.kind === 'ship' && target.player.ship)
-        ? target.player.ship.position
-        : (target.kind === 'base' ? target.planet.position : null);
+    const tpos =
+        target.kind === "ship" && target.player.ship
+            ? target.player.ship.position
+            : target.kind === "base"
+                ? target.planet.position
+                : null;
     if (tpos) moveToward(tpos);
 }
 
 // ----- “Romulan gets hit by …” (PHAROM/TOROM) -----
-export function applyRomulanPhaserHitFrom(phit: number, id: number): { ihita: number; killed: boolean } {
+// id = distance in original (used in divisor)
+export function applyRomulanPhaserHitFrom(
+    phit: number,
+    id: number
+): { ihita: number; killed: boolean } {
     if (!romulan) return { ihita: 0, killed: false };
 
     // ihita = ((100 + iran(100)) * phit) / (10 * id)
@@ -341,7 +360,10 @@ export function applyRomulanTorpedoHitFrom(): { ihita: number; killed: boolean }
 
 // ----- DEADRO parity -----
 export function destroyRomulan(): void {
-    if (!romulan || !romulan.ship) { romulan = null; return; }
+    if (!romulan?.ship) {
+        romulan = null;
+        return;
+    }
 
     romulan.ship.romulanStatus.cloaked = true;
 
@@ -354,13 +376,45 @@ export function destroyRomulan(): void {
     rtpausUntil = 0;
 }
 
+// ----- flavor (speech) -----
+function romulanSpeaks(): void {
+    if (!romulan?.ship) return;
 
+    const rh = romulan.ship.position.h;
+    const rv = romulan.ship.position.v;
+    const recipients = players.filter(
+        p => p !== romulan && p.ship && chebyshev(p.ship.position, { v: rv, h: rh }) <= KRANGE
+    );
 
+    const singleTarget = recipients.length === 1;
+    const msg = generateRomulanMessage(singleTarget);
 
+    for (const p of recipients) {
+        addPendingMessage(p, `Romulan: ${msg}`);
+    }
+}
 
+function generateRomulanMessage(single: boolean): string {
+    const lead = single
+        ? [
+            "You have aroused my wrath, ",
+            "You will witness my vengeance, ",
+            "May you be attacked by a slime-devil, ",
+            "I will reduce you to quarks, ",
+        ]
+        : ["Death to ", "Destruction to ", "I will crush ", "Prepare to die, "];
 
+    const adjectives = ["mindless ", "worthless ", "ignorant ", "idiotic ", "stupid "];
+    const species = ["sub-Romulan ", "human ", "klingon "];
+    const objects = ["mutant", "cretin", "toad", "worm", "parasite"];
 
+    const l = lead[Math.floor(Math.random() * lead.length)];
+    const a = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const s = single ? "" : species[Math.floor(Math.random() * species.length)];
+    const o = objects[Math.floor(Math.random() * objects.length)];
 
+    return `${l}${a}${s}${o}${single ? "!" : "s!"}`;
+}
 
 
 
