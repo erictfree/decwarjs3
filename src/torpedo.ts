@@ -441,17 +441,19 @@ function formatTorpedoBroadcast(player: Player, v: number, h: number): string {
 const CRIT_CHANCE = 0.20;  // TODO should this be in global?
 // Torpedo damage (TORDAM entry point) — parity-focused
 // Torpedo damage (TORDAM entry point) — parity-focused
+// --- Torpedo damage (TORDAM parity) ---------------------------------------
 export function torpedoDamage(
     source: Player | Planet,
     target: Player | Planet
 ): { hita: number; isDestroyed: boolean; shieldStrength: number; shieldsUp: boolean; critdm: number } {
-    // --- Validation (25k fatal threshold for ships; bases only for planets) ---
+    // Validate target state
     if (target instanceof Player) {
         const ship = target.ship;
         if (!ship || ship.energy <= 0 || ship.damage >= SHIP_FATAL_DAMAGE) {
             return { hita: 0, isDestroyed: false, shieldStrength: 0, shieldsUp: false, critdm: 0 };
         }
     } else if (target instanceof Planet) {
+        // Only bases take torpedo damage
         if (!target.isBase || target.energy <= 0) {
             return { hita: 0, isDestroyed: false, shieldStrength: 0, shieldsUp: false, critdm: 0 };
         }
@@ -459,37 +461,35 @@ export function torpedoDamage(
         return { hita: 0, isDestroyed: false, shieldStrength: 0, shieldsUp: false, critdm: 0 };
     }
 
-    // --- Helpers for 0..1000 shield math parity ---
     const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
     const toPct = (energy: number, max: number) => (max > 0 ? clamp((energy / max) * 1000, 0, 1000) : 0);
     const fromPct = (pct: number, max: number) => clamp((pct / 1000) * max, 0, max);
 
-    // --- Pull shield energy + max and convert to 0..1000 scale ---
     const isPlayer = target instanceof Player && !!target.ship;
     const isBase = target instanceof Planet && target.isBase;
 
-    let rawShieldEnergy = isPlayer ? (target as Player).ship!.shieldEnergy : (target as Planet).energy;
-    const rawShieldMax = isPlayer ? MAX_SHIELD_ENERGY : 1000; // bases use 0..1000 intrinsically
-    const shieldsUp = isPlayer ? (target as Player).ship!.shieldsUp : true;
+    let rawShieldEnergy = isPlayer ? target.ship!.shieldEnergy : (target as Planet).energy; // bases store 0..1000
+    const rawShieldMax = isPlayer ? MAX_SHIELD_ENERGY : 1000;
+    const shieldsUp = isPlayer ? target.ship!.shieldsUp : true;
 
     let shieldPct = toPct(rawShieldEnergy, rawShieldMax);
 
-    // --- Base torpedo hit: 4000..8000 ---
+    // Base torpedo hit (Fortran TORDAM): 4000..8000
     const hit = 4000.0 + 4000.0 * Math.random();
 
-    // --- Deflection test (uses 0..1000 shield percent) ---
-    const rana = Math.random(); // “rana”
-    const rand = Math.random(); // “rand”
+    // Deflection test
+    const rana = Math.random();
+    const rand = Math.random();
     const rand2 = rana - (shieldPct * 0.001 * rand) + 0.1;
 
     if (rand2 <= 0.0) {
-        // Deflected: reduce shields by 50 * rana (on percent scale)
+        // Deflected: drain some shields (50 * rana on 0..1000 scale)
         shieldPct = clamp(shieldPct - 50.0 * rana, 0, 1000);
         rawShieldEnergy = fromPct(shieldPct, rawShieldMax);
 
         if (isPlayer) {
-            (target as Player).ship!.shieldEnergy = rawShieldEnergy;
-            addPendingMessage(target as Player, `Your ship's shields deflected a torpedo, losing ${Math.round(50.0 * rana)} shield units!`);
+            target.ship!.shieldEnergy = rawShieldEnergy;
+            addPendingMessage(target, `Your ship's shields deflected a torpedo, losing ${Math.round(50.0 * rana)} shield units!`);
         } else {
             (target as Planet).energy = rawShieldEnergy;
         }
@@ -499,36 +499,33 @@ export function torpedoDamage(
             isDestroyed: false,
             shieldStrength: rawShieldEnergy,
             shieldsUp,
-            critdm: 0
+            critdm: 0,
         };
     }
 
-    // --- Damage calculation with shield absorption + drain (parity) ---
-    let hita: number;
-    const prevShieldPct = shieldPct; // for base-collapse detection
+    // Damage through shields + drain
+    let hita = hit;
+    const prevShieldPct = shieldPct;
 
     if (shieldPct > 0) {
-        // portion that gets through
+        // Portion that penetrates
         hita = hit * (1000.0 - shieldPct) * 0.001;
 
-        // drain shields
+        // Drain shields
         const absorptionFactor = Math.max(shieldPct * 0.001, 0.1);
         shieldPct = shieldPct - (hit * absorptionFactor + 10.0) * 0.03;
         if (shieldPct < 0) shieldPct = 0;
 
-        // write back updated shields
+        // Write back
         rawShieldEnergy = fromPct(shieldPct, rawShieldMax);
         if (isPlayer) {
-            (target as Player).ship!.shieldEnergy = rawShieldEnergy;
+            target.ship!.shieldEnergy = rawShieldEnergy;
         } else {
             (target as Planet).energy = rawShieldEnergy;
         }
-    } else {
-        // No shields: full hit goes to hull/energy
-        hita = hit;
     }
 
-    // --- Base collapse crit/kill BEFORE hull (parity) -------------------
+    // Base collapse crit/kill BEFORE hull
     let critdm = 0;
     if (isBase && prevShieldPct > 0 && shieldPct === 0) {
         const rana2 = Math.random();
@@ -537,18 +534,14 @@ export function torpedoDamage(
         critdm = 1;
 
         if (Math.random() < 0.10 || (target as Planet).energy <= 0) {
-            // base kill (collapse path) + scoring
+            // Base killed via collapse: award and remove
             if (source instanceof Player && source.ship) {
                 const atkSide = source.ship.side;
                 const tgtSide = (target as Planet).side;
-                const sign = (atkSide !== tgtSide) ? 1 : -1;
+                const sign = atkSide !== tgtSide ? 1 : -1;
 
-                (pointsManager as unknown as ScoringAPI)
-                    .addDamageToBases?.(10000 * sign, source, atkSide);
-
-                // Base kills aren’t counted in applyDamage, so keep this here
-                (pointsManager as unknown as ScoringAPI)
-                    .addEnemiesDestroyed?.(1, source, atkSide);
+                (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, source, atkSide);
+                (pointsManager as unknown as ScoringAPI).addEnemiesDestroyed?.(1, source, atkSide);
             }
 
             const arr = (target as Planet).side === "FEDERATION" ? bases.federation : bases.empire;
@@ -560,80 +553,75 @@ export function torpedoDamage(
             handleUndockForAllShipsAfterPortDestruction(target as Planet);
 
             return {
-                hita, // damage inflicted this volley
+                hita, // pre-scale raw hit for telemetry, but base is gone
                 isDestroyed: true,
                 shieldStrength: 0,
                 shieldsUp: false,
-                critdm
+                critdm,
             };
         }
     }
 
-    // --- Ship device crit + jitter BEFORE hull (ships only) -------------
+    // Ship critical (device damage) BEFORE hull
     if (isPlayer && Math.random() < CRIT_CHANCE) {
         const crit = applyShipCriticalParity(target as Player, hita);
         hita = crit.hita;
         critdm = Math.max(critdm, crit.critdm);
 
-        const deviceKeys = Object.keys((target as Player).ship!.devices);
+        const deviceKeys = Object.keys(target.ship!.devices);
         const deviceName = deviceKeys[crit.critdv]?.toUpperCase?.() ?? "DEVICE";
         addPendingMessage(target as Player, `CRITICAL HIT: ${deviceName} damaged by ${crit.critdm}!`);
     }
 
-    // --- Apply the computed damage via shared routine -------------------
-    const result = applyDamage(source, target, hita, rana) || {
-        hita,
+    // Scale raw torp impact into hull units (~×0.1) before applying/scoring
+    const TORP_HULL_SCALE = 0.1;
+    const hull = Math.max(0, Math.round(hita * TORP_HULL_SCALE));
+
+    // Apply to target
+    const result = applyDamage(source, target, hull, rana) || {
+        hita: hull,
         isDestroyed: false,
-        shieldStrength: isPlayer ? (target as Player).ship!.shieldEnergy : (target as Planet).energy,
+        shieldStrength: isPlayer ? target.ship!.shieldEnergy : (target as Planet).energy,
         shieldsUp,
-        critdm: 0
+        critdm: 0,
     };
 
-    // ✅ Award DAMAGE POINTS based on the actual applied hit (after all effects)
+    // Award DAMAGE POINTS on the actual applied hull damage
     if (source instanceof Player && source.ship && result.hita > 0) {
         const atkSide = source.ship.side;
 
         if (isBase) {
-            const sign = (atkSide !== (target as Planet).side) ? 1 : -1;
-            (pointsManager as unknown as ScoringAPI)
-                .addDamageToBases?.(Math.round(result.hita) * sign, source, atkSide);
+            const sign = atkSide !== (target as Planet).side ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI).addDamageToBases?.(result.hita * sign, source, atkSide);
         } else if (isPlayer) {
-            const sign = (atkSide !== (target as Player).ship!.side) ? 1 : -1;
-            (pointsManager as unknown as ScoringAPI)
-                .addDamageToEnemies?.(Math.round(result.hita) * sign, source, atkSide);
+            const sign = atkSide !== target.ship!.side ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI).addDamageToEnemies?.(result.hita * sign, source, atkSide);
         }
     }
 
-
-    // ✅ KILL BONUSES (player attackers only), after result state is known
+    // Kill bonuses (post-state)
     if (source instanceof Player && source.ship && result.isDestroyed) {
         const atkSide = source.ship.side;
 
         if (isPlayer) {
-            const sign = (atkSide !== (target as Player).ship!.side) ? 1 : -1;
-            (pointsManager as unknown as ScoringAPI)
-                .addDamageToEnemies?.(5000 * sign, source, atkSide);
-            // NOTE: do NOT increment kill count here — applyDamage(...) already did it for ship kills
+            const sign = atkSide !== target.ship!.side ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI).addDamageToEnemies?.(5000 * sign, source, atkSide);
+            // ship kill count already handled in applyDamage
         } else if (isBase) {
-            const sign = (atkSide !== (target as Planet).side) ? 1 : -1;
-            (pointsManager as unknown as ScoringAPI)
-                .addDamageToBases?.(10000 * sign, source, atkSide);
-            // Base kills aren’t counted in applyDamage, so keep this here
-            (pointsManager as unknown as ScoringAPI)
-                .addEnemiesDestroyed?.(1, source, atkSide);
+            const sign = atkSide !== (target as Planet).side ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, source, atkSide);
+            (pointsManager as unknown as ScoringAPI).addEnemiesDestroyed?.(1, source, atkSide);
         }
     }
 
-
-    // surface crit flag (device/base crit)
+    // Surface crit flag and shield fields
     result.critdm = Math.max(result.critdm || 0, critdm);
-
-    // ensure shieldsUp reflects current true state in return
-    result.shieldsUp = isPlayer ? (!!(target as Player).ship!.shieldsUp && (target as Player).ship!.shieldEnergy > 0) : true;
-    result.shieldStrength = isPlayer ? (target as Player).ship!.shieldEnergy : (target as Planet).energy;
+    result.shieldsUp = isPlayer ? (target.ship!.shieldsUp && target.ship!.shieldEnergy > 0) : true;
+    result.shieldStrength = isPlayer ? target.ship!.shieldEnergy : (target as Planet).energy;
 
     return result;
 }
+
 
 
 
@@ -674,6 +662,7 @@ export function torpedoDamage(
 // }
 
 // Shared damage resolver for phasers / torpedoes
+// --- Shared damage resolver (phasers/torpedoes) ---------------------------
 export function applyDamage(
     source: Player | Planet,
     target: Player | Planet,
@@ -684,10 +673,14 @@ export function applyDamage(
     const critdm = 0;
     let isDestroyed = false;
 
-    // Apply damage to hull/energy
+    // Ships
     if (target instanceof Player && target.ship) {
         target.ship.energy -= hita;
         target.ship.damage += hita / 2;
+
+        // Clamp to avoid negative telemetry
+        if (target.ship.energy < 0) target.ship.energy = 0;
+
         if (target.ship.energy <= 0 || target.ship.damage >= SHIP_FATAL_DAMAGE) {
             isDestroyed = true;
             removePlayerFromGame(target);
@@ -695,35 +688,42 @@ export function applyDamage(
                 pointsManager.addEnemiesDestroyed(1, source, source.ship.side);
             }
         }
+
         return {
             hita,
             isDestroyed,
             shieldStrength: target.ship.shieldEnergy,
-            shieldsUp: target.ship.shieldsUp,
-            critdm
+            shieldsUp: target.ship.shieldsUp && target.ship.shieldEnergy > 0,
+            critdm,
         };
-    } else if (target instanceof Planet && target.isBase) {
+    }
+
+    // Bases
+    if (target instanceof Planet && target.isBase) {
         target.energy -= hita;
+        if (target.energy < 0) target.energy = 0;
+
         if (target.energy <= 0) {
             isDestroyed = true;
-            const baseArray = target.side === "FEDERATION" ? bases.federation : bases.empire;
-            const idx = baseArray.indexOf(target);
-            if (idx !== -1) baseArray.splice(idx, 1);
+            const arr = target.side === "FEDERATION" ? bases.federation : bases.empire;
+            const idx = arr.indexOf(target);
+            if (idx !== -1) arr.splice(idx, 1);
             target.isBase = false;
             target.energy = 0;
             target.builds = 0;
             handleUndockForAllShipsAfterPortDestruction(target);
         }
+
         return {
             hita,
             isDestroyed,
             shieldStrength: target.energy,
             shieldsUp: true,
-            critdm
+            critdm,
         };
     }
 
-    // Default fallback (shouldn't hit)
+    // Fallback (shouldn’t occur)
     return { hita, isDestroyed, shieldStrength: 0, shieldsUp: false, critdm };
 }
 

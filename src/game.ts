@@ -16,6 +16,12 @@ import { baseEnergyRegeneration } from "./planet.js";
 export const SHIP_FATAL_DAMAGE = 25000;  // adjusted for fortran derived code
 import { romulanApproachTick } from "./romulan.js";
 
+// bot imports
+import { updateBots, botChatterTick } from "./bots/bot.js";
+import { spawnAndRegisterBot } from "./bots/register.js";
+
+
+
 
 export const players: Player[] = [];
 export const limbo: Player[] = [];
@@ -30,6 +36,15 @@ export const stardate: number = 0;
 export const pointsManager: PointsManager = new PointsManager();
 
 export const PLANET_PHASER_RANGE = 2; // Fortran pdist <= 2
+
+
+// mark existing player objects as bots
+// spawnAndRegisterBot("aggressor", "FEDERATION", "BOT-KIRK");
+// spawnAndRegisterBot("defender", "EMPIRE", "BOT-KOL");
+
+
+
+
 
 export function generateGalaxy(seed?: string): void {
     if (!seed) {
@@ -54,6 +69,14 @@ export function generateGalaxy(seed?: string): void {
     }
     console.log(nstar, nhole, nplnet);
     settings.generated = true;
+
+
+    // bot testing, TODO remove later
+
+    //  if (process.env.SPAWN_BOTS === "1") {
+    // spawnAndRegisterBot("aggressor", "FEDERATION", "BOT-KIRK");
+    // spawnAndRegisterBot("defender", "EMPIRE", "BOT-KOL");
+    //  }
 }
 
 // export function processTimeConsumingMove(player: Player) {
@@ -127,6 +150,10 @@ export function processTimeConsumingMove(player: Player) {
         }
     }
 
+    // call every time-consuming move “sweep”
+    updateBots();
+    botChatterTick(); // optional flavor
+
     // Life support upkeep for everyone
     for (const p of players) p.updateLifeSupport();
 }
@@ -139,6 +166,11 @@ function updateGame(): void {
     if (settings.blackholes) {
         checkForBlackholes();
     }
+
+
+    //testing remove todo
+    updateBots();
+    botChatterTick(); // optional flavor
 
     setTimeout(updateGame, 1000);
 }
@@ -161,7 +193,7 @@ function checkForPendingMessages(): void {
     sendAllPendingMessages();
     setTimeout(checkForPendingMessages, 30);
 }
-checkForPendingMessages();
+setTimeout(checkForPendingMessages, 1000);
 
 
 function checkForInactivity() {

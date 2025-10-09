@@ -1,5 +1,5 @@
-import { Player } from "./player";
-import { Planet } from "./planet";
+import { Player } from "./player.js";
+import { Planet } from "./planet.js";
 
 
 export const teamMemory = {

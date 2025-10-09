@@ -345,6 +345,24 @@ export function applyPhaserDamage(
         }
     }
 
+    // --- Scoring: award DAMAGE POINTS from the actual applied hit -------------
+    if (attacker.ship && hita > 0) {
+        const atkSide = attacker.ship.side;
+
+        // Base damage (+/- based on friend/foe)
+        if (target instanceof Planet && target.isBase) {
+            const sign = atkSide !== target.side ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI)
+                .addDamageToBases?.(Math.round(hita) * sign, attacker, atkSide);
+        }
+        // Ship damage (+/- based on friend/foe)
+        else if (target instanceof Player && target.ship) {
+            const sign = atkSide !== target.ship.side ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI)
+                .addDamageToEnemies?.(Math.round(hita) * sign, attacker, atkSide);
+        }
+    }
+
     // --- Messaging -----------------------------------------------------
     const coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, targetPos);
     sendOutputMessage(attacker, {
