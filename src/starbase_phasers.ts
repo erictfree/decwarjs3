@@ -10,6 +10,8 @@ import { MAX_SHIELD_ENERGY } from './settings.js';
 import { CRIT_CHANCE } from './phaser.js';
 import { addPendingMessage } from './communication.js';
 import { Ship } from './ship.js';
+import { pointsManager } from './game.js';
+import { getRandom } from './util/random.js'; // deterministic RNG used elsewhere
 
 type RomulanStatus = {
     isRomulan: boolean;
@@ -40,14 +42,19 @@ function isVisibleToBase(p: Player): boolean {
     return true;
 }
 
+function baseIsOperational(p: Planet): boolean {
+    // Today: all registry entries are operational.
+    // Future: add e.g. `return p.isBase && !p.destroyed;`
+    return p.isBase === true;
+}
+
 function enemyBasesFor(side: Side): Planet[] {
     if (side === "ROMULAN") {
-        // ROMULAN mover: both sides' bases are considered (Fortran behavior)
-        return [...bases.federation, ...bases.empire].filter(b => b.isBase && b.energy > 0);
+        return [...bases.federation, ...bases.empire].filter(baseIsOperational);
     }
-    const enemySide = side === "FEDERATION" ? "EMPIRE" : "FEDERATION";
-    const arr = enemySide === "FEDERATION" ? bases.federation : bases.empire;
-    return arr.filter(b => b.isBase && b.energy > 0);
+    const enemySide: Side = (side === "FEDERATION") ? "EMPIRE" : "FEDERATION";
+    const arr = (enemySide === "FEDERATION") ? bases.federation : bases.empire;
+    return arr.filter(baseIsOperational);
 }
 
 export function basphaFireOnce(mover: Player, numply: number): void {
@@ -86,7 +93,7 @@ export function basphaFireOnce(mover: Player, numply: number): void {
             ship.ship!.shieldEnergy = core.newShieldEnergy;
 
             // Ship device crit + ±500 jitter BEFORE hull (same as players)
-            if (Math.random() < CRIT_CHANCE) {
+            if (getRandom() < CRIT_CHANCE) {
                 const crit = applyShipCriticalParity(ship, hita);
                 hita = crit.hita;
                 const deviceKeys = Object.keys(ship.ship!.devices);
@@ -94,13 +101,23 @@ export function basphaFireOnce(mover: Player, numply: number): void {
                 addPendingMessage(ship, `BASE PHASERS CRIT: ${deviceName} damaged by ${crit.critdm}!`);
             }
 
-            // apply hull/energy damage & destruction via shared resolver
-            applyDamage(base, ship, hita, Math.random());
+            // use current "alive" gate as pre-state to avoid double kill credit within the sweep
+            const wasAlive = ship.ship!.energy > 0;
 
-            // (Optional) If you want full team scoring parity here, you can guard:
-            // const pm: any = pointsManager as any;
-            // if (pm?.addDamageToEnemies) pm.addDamageToEnemies(Math.round(hita), mover, mover.ship!.side);
-            // if (ship just died) also add +5000 and enemiesDestroyed(1, mover, mover.ship!.side)
+            // apply hull/energy damage & destruction via shared resolver (deterministic rng)
+            const res = applyDamage(base, ship, hita, getRandom());
+
+            // === scoring parity (credit exactly this volley) ===
+            const dealt = Math.max(0, Math.round(res.hita));
+            try {
+                pointsManager.addDamageToEnemies(dealt, /*player*/ undefined, base.side);
+                if (wasAlive && res.isDestroyed) {
+                    pointsManager.addEnemiesDestroyed(1, /*player*/ undefined, base.side);
+                }
+            } catch {
+                // pointsManager may be absent in some builds; ignore
+            }
+            // ===================================================
         }
     }
 }

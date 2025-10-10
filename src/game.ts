@@ -111,7 +111,6 @@ export function generateGalaxy(seed?: string): void {
 //         player.updateLifeSupport();
 //     }
 // }
-
 export function processTimeConsumingMove(player: Player) {
     if (!player.ship) return;
 
@@ -127,36 +126,47 @@ export function processTimeConsumingMove(player: Player) {
     player.stardate += 1;
     settings.dotime += 1;
 
-    // ACTIVE players only (alive ships), never 0; 25,000 fatal threshold
+    // ACTIVE human players only (exclude Romulan), never 0; fatal threshold
     const numply = Math.max(
         1,
-        players.filter(p => p?.ship && p.ship.energy > 0 && p.ship.damage < SHIP_FATAL_DAMAGE).length
+        players.filter(p =>
+            p?.ship &&
+            p.ship.side !== "ROMULAN" &&
+            p.ship.energy > 0 &&
+            p.ship.damage < SHIP_FATAL_DAMAGE
+        ).length
     );
 
     // Once per full sweep of players
     if (settings.dotime >= numply) {
         settings.dotime = 0; // reset sweep
 
-        // Periodic parity actions
-        baseEnergyRegeneration(player);     // BASBLD
+        // === Defense & regen in DECWAR order ===
         basphaFireOnce(player, numply);     // BASPHA (enemy bases fire once)
         planetPhaserDefense(player);        // PLNATK (planet auto-phasers)
+        baseEnergyRegeneration(player);     // BASBLD (after defenses)
+        // ======================================
 
-        // Romulan driver (spawn + behavior), gated
+        // Romulan driver (spawn + behavior), gated at sweep boundary
         if (settings.romulans) {
-            updateRomulan();                  // ROMDRV weapon logic (fires if cooldowns ready)
-            romulanApproachTick();            // Optional: take safe steps toward target between volleys
-            maybeSpawnRomulan();              // ROMDRV spawn cadence
+            updateRomulan();         // ROMDRV weapon logic (fires if cooldowns ready)
+            romulanApproachTick();   // approach/steering
+            maybeSpawnRomulan();     // ROMDRV spawn cadence
         }
-    }
 
-    // call every time-consuming move “sweep”
-    updateBots();
-    botChatterTick(); // optional flavor
+        // If bots should act once per sweep, keep these here:
+        updateBots();
+        botChatterTick();
+    } else {
+        // If bots should act every time-consuming move instead, keep them here:
+        // updateBots();
+        // botChatterTick();
+    }
 
     // Life support upkeep for everyone
     for (const p of players) p.updateLifeSupport();
 }
+
 
 
 function updateGame(): void {
