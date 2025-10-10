@@ -8,6 +8,7 @@
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
+    "rootDir": "src", // ✅ set this
     "outDir": "dist",
     "resolveJsonModule": true,
     "moduleDetection": "force",
@@ -18,7 +19,11 @@
     ]
   },
   "include": [
-    "src",
-    "tests"
+    "src"
+  ], // ✅ only compile app code
+  "exclude": [
+    "tests",
+    "**/*.test.ts",
+    "**/*.spec.ts"
   ]
 }
