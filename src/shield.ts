@@ -2,6 +2,7 @@ import { Command } from "./command.js";
 import { Player } from "./player.js";
 import { sendMessageToClient } from "./communication.js";
 import { matchesPattern } from "./util/util.js";
+import { emitShieldsToggled } from "./api/events.js";
 
 export function shieldCommand(player: Player, command: Command): void {
     const action = command.args[0]?.toUpperCase();
@@ -18,12 +19,27 @@ export function shieldCommand(player: Player, command: Command): void {
         return;
     }
 
+
     if (matchesPattern(action, "Up")) {
-        console.log("Raising shields");
-        player.ship?.raiseShields();
+        if (!player.ship) return;
+        const wasUp = player.ship.shieldsUp;
+        const before = player.ship.shieldEnergy;
+
+        player.ship.raiseShields();
+
+        if (!wasUp && player.ship.shieldsUp) {
+            emitShieldsToggled(player, true, { before, after: player.ship.shieldEnergy });
+        }
     } else if (matchesPattern(action, "Down")) {
-        console.log("Lowering shields");
-        player.ship?.lowerShields();
+        if (!player.ship) return;
+        const wasUp = player.ship.shieldsUp;
+        const before = player.ship.shieldEnergy;
+
+        player.ship.lowerShields();
+
+        if (wasUp && !player.ship.shieldsUp) {
+            emitShieldsToggled(player, false, { before, after: player.ship.shieldEnergy });
+        }
     } else if (matchesPattern(action, "Transfer")) {
         const energyAmount = command.args[1];
 

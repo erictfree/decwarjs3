@@ -23,8 +23,8 @@ import { Star } from './star.js';
 import { Blackhole } from './blackhole.js';
 import { applyShipCriticalParity } from './phaser.js';
 import { Side } from './settings.js';
-import { gameEvents } from './api/events.js';
-import { emitShipDestroyed, attackerRef } from './api/events.js';
+import { gameEvents, planetRef } from './api/events.js';
+import { emitShipDestroyed, attackerRef, emitPlanetHit, emitShipHullChanged, emitShieldsChanged } from './api/events.js';
 
 
 
@@ -304,28 +304,51 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
         switch (collision?.type) {
             case "ship": {
                 const victim = collision.player;
+
+                const energyBefore = victim.ship!.energy;
+                const damageBefore = victim.ship!.damage;
+                const shieldsBefore = victim.ship!.shieldEnergy;
+
                 const res = torpedoDamage(player, victim);
                 fired = true;
 
-                // Shooter message
-                {
-                    const coords = ocdefCoords(player.settings.ocdef, player.ship.position, victim.ship!.position);
-                    sendMessageToClient(player, `Torpedo hit ${victim.ship!.name} @${coords} for ${Math.round(res.hita)} damage${res.critdm ? " (CRIT)" : ""}.`);
+                // hull/energy aggregate
+                emitShipHullChanged(
+                    victim,
+                    energyBefore,
+                    victim.ship!.energy,
+                    damageBefore,
+                    victim.ship!.damage,
+                    "torpedo",
+                    player
+                );
+
+                // shields delta (only if changed)
+                if (victim.ship && shieldsBefore !== victim.ship.shieldEnergy) {
+                    emitShieldsChanged(victim, shieldsBefore, victim.ship.shieldEnergy);
                 }
-                // Victim message
+
+                const coords = ocdefCoords(player.settings.icdef, player.ship.position, victim.ship!.position);
+                sendMessageToClient(player, `Torpedo hit ${victim.ship!.name} @${coords} for ${Math.round(res.hita)} damage${res.critdm ? " (CRIT)" : ""}.`);
                 addPendingMessage(victim, `${player.ship!.name} hit you with a torpedo for ${Math.round(res.hita)} damage${res.critdm ? " (CRIT)" : ""}.`);
 
-                // Endgame check if something died
-                if (res.isDestroyed) {
-                    checkEndGame();
-                }
+                if (res.isDestroyed) checkEndGame();
                 break;
             }
 
+
+
             case "planet": {
                 const p = collision.planet;
+
+                // (optional) capture before if you want it; event only needs after/damage
+                // const energyBefore = p.energy;
+
                 const res = torpedoDamage(player, p); // will no-op on non-base planets by validation
                 fired = true;
+
+                // emit per-impact planet/base damage event
+                emitPlanetHit(p, "torpedo", res.hita, res.isDestroyed, player);
 
                 const coords = ocdefCoords(player.settings.ocdef, player.ship.position, p.position);
                 if (p.isBase) {
@@ -587,6 +610,17 @@ export function torpedoDamage(
             {
                 const base = target as Planet;
                 const prevSide = base.side; // capture before mutation
+
+                // mutate base (isBase=false, energy=0, builds=0, undock, etc.)
+                gameEvents.emit({
+                    type: "planet_base_removed",
+                    payload: {
+                        planet: planetRef(base),
+                        by: attackerRef(source instanceof Player ? source : undefined),
+                        reason: "collapse_torpedo",
+                        previousSide: prevSide,
+                    },
+                });
 
                 // remove from the correct team list using the captured side
                 const arr = prevSide === "FEDERATION" ? bases.federation : bases.empire;

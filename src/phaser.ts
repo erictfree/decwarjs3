@@ -12,7 +12,8 @@ import { players, planets, bases, removePlayerFromGame, checkEndGame, pointsMana
 import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
 import { SHIP_FATAL_DAMAGE, PLANET_PHASER_RANGE } from './game.js';
 import { gameEvents, attackerRef, emitShipDestroyed } from './api/events.js';
-import { planetRef } from './api/events.js';
+import { emitPhaserEvent, emitShieldsChanged, emitPlanetBaseRemoved } from './api/events.js';
+
 
 
 import type { Side } from "./settings.js";
@@ -114,7 +115,7 @@ export function phaserCommand(player: Player, command: Command): void {
         return;
     }
 
-    player.ship.energy -= totalEnergyCost;
+    //player.ship.energy -= totalEnergyCost;  double counting of energy
     player.ship.condition = "RED";
 
     const target = players.find(p => p.ship && p.ship.position.h === targetH && p.ship.position.v === targetV) ||
@@ -168,8 +169,9 @@ export function applyPhaserDamage(
         return { hita: 0, critdv: 0, critdm: 0, klflg: 0, checkEndGame: false };
     }
 
-    // Spend energy & normalize phit like PHACON
-    const { phit: phitUsed } = preparePhaserShot(attacker, phit);
+    // Spend energy & normalize phit like PHACON — do this ONCE.
+    const shieldPenalty = attacker.ship.shieldsUp ? 200 : 0;
+    const { phit: phitUsed, energySpent } = preparePhaserShot(attacker, phit, shieldPenalty);
 
     let hita = phitUsed;
     let critdv = 0;
@@ -177,41 +179,58 @@ export function applyPhaserDamage(
     let klflg = 0;
     let checkEndGame = false;
 
-    // Non-base planet behavior (unchanged)
+    // --- quick exit path: non-base planet (installations only; cannot destroy)
     if (target instanceof Planet && !target.isBase) {
+        const attackerPos = attacker.ship.position;
+        const targetPos = target.position;
+        const distance = chebyshev(attackerPos, targetPos);
+
+        // Report “no_effect” phaser at planet body (you DID spend energy)
+
+        emitPhaserEvent({
+            by: { shipName: attacker.ship.name, side: attacker.ship.side },
+            from: attackerPos,
+            to: targetPos,
+            distance,
+            energySpent,
+            target: { kind: "planet", name: target.name, side: target.side, position: target.position },
+            result: "no_effect",
+        });
+
+        // Keep your existing installations/builds side-effect
         if (Math.random() < 0.25) {
             if (target.builds > 0) {
                 target.builds = Math.max(0, target.builds - 1);
-                hita = 1;
                 const coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, target.position);
                 sendOutputMessage(attacker, {
                     SHORT: `Planet hit @${coords}: Builds -1`,
                     MEDIUM: `Phaser hit reduced builds on planet at ${coords} by 1 (now ${target.builds}).`,
-                    LONG: `Phasers damaged planetary installations at ${coords}, reducing builds by 1 to ${target.builds}. Cannot destroy planet.`
+                    LONG: `Phasers damaged planetary installations at ${coords}, reducing builds by 1 to ${target.builds}. Cannot destroy planet.`,
                 });
+                return { hita: 1, critdv: 0, critdm: 0, klflg: 0, checkEndGame: false };
             } else {
-                hita = 0;
                 sendMessageToClient(attacker, `Planet at full vulnerability; phasers cannot destroy it.`);
+                return { hita: 0, critdv: 0, critdm: 0, klflg: 0, checkEndGame: false };
             }
         } else {
-            hita = 0;
             sendMessageToClient(attacker, `Phaser hit on planet had no effect on installations.`);
+            return { hita: 0, critdv: 0, critdm: 0, klflg: 0, checkEndGame: false };
         }
-        return { hita, critdv, critdm, klflg, checkEndGame };
     }
 
-    // --- PHADAM-parity shield/absorption/drain + final damage ---------
+    // --- common path (ship OR base) -------------------------------------
     const attackerPos = attacker.ship.position;
-    const targetPos = (target instanceof Player && target.ship) ? target.ship.position : (target as Planet).position;
+    const targetPos =
+        target instanceof Player && target.ship ? target.ship.position : (target as Planet).position;
     const distance = chebyshev(attackerPos, targetPos);
 
     const shooterDamaged =
         !!(attacker.ship?.devices?.phaser > 0) || !!(attacker.ship?.devices?.computer > 0);
 
-    // Shield "energy" and max for the target
+    // target shield/energy stores
+    const targetIsBase = target instanceof Planet && target.isBase;
     let rawShieldEnergy: number;
     let rawShieldMax: number;
-    const targetIsBase = target instanceof Planet && target.isBase;
 
     if (target instanceof Player && target.ship) {
         rawShieldEnergy = target.ship.shieldEnergy;
@@ -221,44 +240,17 @@ export function applyPhaserDamage(
         rawShieldMax = 1000;
     }
 
-    // Snapshot previous shield % (0..1000) before modification
+    // helpers for 0..1000 “percent” shield math
     const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
     const toPct = (energy: number, max: number) => (max > 0 ? clamp((energy / max) * 1000, 0, 1000) : 0);
+
     const prevShieldPct = toPct(rawShieldEnergy, rawShieldMax);
 
-    // --- Telemetry: single authoritative phaser fire event ---------------
-    try {
-        const by = attackerRef(attacker);
-        if (target instanceof Player && target.ship) {
-            gameEvents.emit({
-                type: "phaser",
-                payload: {
-                    by,                               // { ship:{name, side} }
-                    from: attackerPos,                // attacker location
-                    to: targetPos,                    // target location (client uses this)
-                    target: {                         // optional richer info for logs
-                        type: "ship",
-                        ship: { name: target.ship.name, side: target.ship.side, position: { ...target.ship.position } }
-                    },
-                    distance
-                }
-            });
-        } else {
-            const p = target as Planet;
-            gameEvents.emit({
-                type: "phaser",
-                payload: {
-                    by,
-                    from: attackerPos,
-                    to: targetPos,                    // also set, so client flash works
-                    planet: planetRef(p),             // client also checks .planet.position
-                    distance
-                }
-            });
-        }
-    } catch { /* never let telemetry break combat */ }
+    // snapshot BEFORE running PHADAM (for telemetry)
+    const isTargetShip = target instanceof Player && !!target.ship;
+    const shieldsBefore = isTargetShip ? (target as Player).ship!.shieldEnergy : (target as Planet).energy;
 
-
+    // --- PHADAM parity core (shield absorb + drain) ---------------------
     const core = phadamCore({
         targetIsBase,
         rawShieldEnergy,
@@ -270,14 +262,21 @@ export function applyPhaserDamage(
 
     hita = core.hita;
 
-    // Write back updated shields/energy (post-drain)
-    if (target instanceof Player && target.ship) {
-        target.ship.shieldEnergy = core.newShieldEnergy;
+    // write-back shields/energy AFTER drain
+    if (isTargetShip) {
+        (target as Player).ship!.shieldEnergy = core.newShieldEnergy;
     } else {
-        (target as Planet).energy = core.newShieldEnergy; // for bases: % store (0..1000)
+        (target as Planet).energy = core.newShieldEnergy; // base store (0..1000)
     }
 
-    // --- Base collapse crit/kill BEFORE hull damage --------------------
+    // snapshot AFTER for ship shields_changed
+    const shieldsAfter = isTargetShip ? (target as Player).ship!.shieldEnergy : (target as Planet).energy;
+
+    if (isTargetShip && shieldsBefore !== shieldsAfter) {
+        emitShieldsChanged(target as Player, shieldsBefore, shieldsAfter);
+    }
+
+    // --- Base collapse crit/kill BEFORE hull ----------------------------
     let baseKilledNow = false;
     if (targetIsBase) {
         const newShieldPct = toPct(core.newShieldEnergy, rawShieldMax); // post-drain, pre-hull
@@ -287,154 +286,173 @@ export function applyPhaserDamage(
             (target as Planet).energy = Math.max(0, (target as Planet).energy - extra);
             critdm = Math.max(critdm, 1);
 
-            if (Math.random() < 0.10 || (target as Planet).energy <= 0) {
+            if (Math.random() < 0.1 || (target as Planet).energy <= 0) {
                 klflg = 1;
 
-
-
-                // ✅ BASE KILL BONUS (+/-10000), guarded
+                // +/-10000 base kill bonus
                 if (attacker.ship) {
                     const atkSide = attacker.ship.side;
                     const tgtSide = (target as Planet).side;
-                    const sign = (atkSide !== tgtSide) ? 1 : -1;
-
-                    (pointsManager as unknown as ScoringAPI)
-                        .addDamageToBases?.(10000 * sign, attacker, atkSide);
+                    const sign = atkSide !== tgtSide ? 1 : -1;
+                    (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, attacker, atkSide);
                 }
 
                 const baseArray = target.side === "FEDERATION" ? bases.federation : bases.empire;
                 const idx = baseArray.indexOf(target);
                 if (idx !== -1) baseArray.splice(idx, 1);
+
+                const prevSide = (target as Planet).side;
+
                 (target as Planet).isBase = false;
                 (target as Planet).builds = 0;
                 (target as Planet).energy = 0;
                 handleUndockForAllShipsAfterPortDestruction(target as Planet);
+
+                emitPlanetBaseRemoved(target as Planet, "collapse_phaser", attacker, prevSide);
+
                 checkEndGame = true;
-                baseKilledNow = true; // don't also apply hull
+                baseKilledNow = true;
             }
         }
     }
 
-    // --- Ship device crit + jitter BEFORE hull (ships only) ------------
-    if (!baseKilledNow && target instanceof Player && target.ship && Math.random() < CRIT_CHANCE) {
-        const crit = applyShipCriticalParity(target, hita);
+    // --- Ship device crit + jitter BEFORE hull (ships only) -------------
+    if (!baseKilledNow && isTargetShip && Math.random() < CRIT_CHANCE) {
+        const crit = applyShipCriticalParity(target as Player, hita);
         hita = crit.hita;
         critdv = crit.critdv;
         critdm = Math.max(critdm, crit.critdm);
 
-        const deviceKeys = Object.keys(target.ship.devices);
+        const deviceKeys = Object.keys((target as Player).ship!.devices);
         const deviceName = deviceKeys[critdv]?.toUpperCase?.() ?? "DEVICE";
-        addPendingMessage(target, `CRITICAL HIT: ${deviceName} damaged by ${critdm}!`);
+        addPendingMessage(target as Player, `CRITICAL HIT: ${deviceName} damaged by ${critdm}!`);
     }
 
-    // --- Apply damage to hull/energy (skip if base just died) ----------
+    // --- Apply hull/energy (skip if base just died in collapse) ---------
     if (!baseKilledNow) {
-        if (target instanceof Player && target.ship) {
-            target.ship.energy -= hita;
-            target.ship.damage += hita / 2;
-        } else if (target instanceof Planet) {
-            target.energy -= hita;
+        if (isTargetShip) {
+            (target as Player).ship!.energy -= hita;
+            (target as Player).ship!.damage += hita / 2;
+        } else {
+            (target as Planet).energy -= hita;
         }
     }
 
-    // --- Destruction check (ship threshold parity = 25000) -------------
+    // --- Destruction check ----------------------------------------------
     const isDestroyed =
-        (target instanceof Player && target.ship && (target.ship.energy <= 0 || target.ship.damage >= SHIP_FATAL_DAMAGE)) ||
-        (target instanceof Planet && target.isBase && target.energy <= 0);
+        (isTargetShip &&
+            ((target as Player).ship!.energy <= 0 || (target as Player).ship!.damage >= SHIP_FATAL_DAMAGE)) ||
+        (!isTargetShip && (target as Planet).isBase && (target as Planet).energy <= 0);
 
     if (isDestroyed && !baseKilledNow) {
         klflg = 1;
-        if (target instanceof Player) {
-            // ✅ SHIP KILL BONUS (+/-5000), guarded
+        if (isTargetShip) {
+            // +/-5000 ship kill bonus
             if (attacker.ship) {
                 const atkSide = attacker.ship.side;
-                const tgtSide = (target as Player).ship?.side;
-                const sign = (tgtSide && atkSide !== tgtSide) ? 1 : -1;
-
-                (pointsManager as unknown as ScoringAPI)
-                    .addDamageToEnemies?.(5000 * sign, attacker, atkSide);
+                const tgtSide = (target as Player).ship!.side;
+                const sign = atkSide !== tgtSide ? 1 : -1;
+                (pointsManager as unknown as ScoringAPI).addDamageToEnemies?.(5000 * sign, attacker, atkSide);
             }
 
-            if (target.ship) {
-                emitShipDestroyed(
-                    target.ship.name,
-                    target.ship.side,
-                    { v: target.ship.position.v, h: target.ship.position.h },
-                    attackerRef(attacker),
-                    "combat"
-                );
-            }
+            emitShipDestroyed(
+                (target as Player).ship!.name,
+                (target as Player).ship!.side,
+                { v: (target as Player).ship!.position.v, h: (target as Player).ship!.position.h },
+                attackerRef(attacker),
+                "combat"
+            );
 
-            removePlayerFromGame(target);
+            removePlayerFromGame(target as Player);
             if (attacker.ship) {
                 pointsManager.addEnemiesDestroyed(1, attacker, attacker.ship.side);
             }
         } else {
-            // (base path for energy <= 0 that wasn't killed in collapse branch)
-            // ✅ BASE KILL BONUS (+/-10000), guarded
+            // base died via hull after PHADAM
             if (attacker.ship) {
                 const atkSide = attacker.ship.side;
                 const tgtSide = (target as Planet).side;
-                const sign = (atkSide !== tgtSide) ? 1 : -1;
-
-                (pointsManager as unknown as ScoringAPI)
-                    .addDamageToBases?.(10000 * sign, attacker, atkSide);
+                const sign = atkSide !== tgtSide ? 1 : -1;
+                (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, attacker, atkSide);
             }
 
-            const baseArray = target.side === "FEDERATION" ? bases.federation : bases.empire;
-            const idx = baseArray.indexOf(target);
+            const baseArray = (target as Planet).side === "FEDERATION" ? bases.federation : bases.empire;
+            const idx = baseArray.indexOf(target as Planet);
             if (idx !== -1) baseArray.splice(idx, 1);
-            target.isBase = false;
-            target.builds = 0;
-            target.energy = 0;
-            handleUndockForAllShipsAfterPortDestruction(target);
+            (target as Planet).isBase = false;
+            (target as Planet).builds = 0;
+            (target as Planet).energy = 0;
+            handleUndockForAllShipsAfterPortDestruction(target as Planet);
             checkEndGame = true;
-            gameEvents.emit({
-                type: "planet_base_removed",
-                payload: {
-                    planet: {
-                        name: target.name,
-                        previousSide: target.side,
-                        position: { ...target.position }
-                    },
-                    reason: "collapse_phaser"
-                }
-            });
+
+            const prevSide = (target as Planet).side;
+            // ...mutations done above already...
+            emitPlanetBaseRemoved(target as Planet, "collapse_phaser", attacker, prevSide);
         }
     }
 
-    // --- Scoring: award DAMAGE POINTS from the actual applied hit -------------
+    // --- Scoring on actual applied damage --------------------------------
     if (attacker.ship && hita > 0) {
         const atkSide = attacker.ship.side;
-
-        // Base damage (+/- based on friend/foe)
-        if (target instanceof Planet && target.isBase) {
-            const sign = atkSide !== target.side ? 1 : -1;
-            (pointsManager as unknown as ScoringAPI)
-                .addDamageToBases?.(Math.round(hita) * sign, attacker, atkSide);
-        }
-        // Ship damage (+/- based on friend/foe)
-        else if (target instanceof Player && target.ship) {
-            const sign = atkSide !== target.ship.side ? 1 : -1;
-            (pointsManager as unknown as ScoringAPI)
-                .addDamageToEnemies?.(Math.round(hita) * sign, attacker, atkSide);
+        if (!isTargetShip && (target as Planet).isBase) {
+            const sign = atkSide !== (target as Planet).side ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI).addDamageToBases?.(Math.round(hita) * sign, attacker, atkSide);
+        } else if (isTargetShip) {
+            const sign = atkSide !== (target as Player).ship!.side ? 1 : -1;
+            (pointsManager as unknown as ScoringAPI).addDamageToEnemies?.(Math.round(hita) * sign, attacker, atkSide);
         }
     }
 
-    // --- Messaging -----------------------------------------------------
+    // --- Messaging -------------------------------------------------------
     const coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, targetPos);
     sendOutputMessage(attacker, {
         SHORT: `Phaser hit @${coords}: ${Math.round(hita)}`,
         MEDIUM: `Phaser hit on target at ${coords} for ${Math.round(hita)} damage.`,
-        LONG: `Phasers struck target at ${coords}, inflicting ${Math.round(hita)} damage. Critical: ${critdm > 0 ? 'Yes' : 'No'}.`
+        LONG: `Phasers struck target at ${coords}, inflicting ${Math.round(hita)} damage. Critical: ${critdm > 0 ? "Yes" : "No"}.`,
     });
 
-    if (target instanceof Player) {
-        addPendingMessage(target, `Phaser hit from ${attacker.ship.name} for ${Math.round(hita)} damage!`);
+    if (isTargetShip) {
+        addPendingMessage(target as Player, `Phaser hit from ${attacker.ship.name} for ${Math.round(hita)} damage!`);
     }
+
+
+    // ----- authoritative phaser event emission -----
+    try {
+        const by = { shipName: attacker.ship.name, side: attacker.ship.side };
+        const from = attacker.ship.position;
+        const to = (target instanceof Player && target.ship)
+            ? target.ship.position
+            : (target as Planet).position;
+
+        const targetRef =
+            (target instanceof Player && target.ship)
+                ? { kind: "ship" as const, name: target.ship.name, side: target.ship.side, position: { ...target.ship.position } }
+                : (target instanceof Planet && target.isBase)
+                    ? { kind: "base" as const, name: target.name, side: target.side, position: { ...target.position } }
+                    : { kind: "planet" as const, name: (target as Planet).name, side: (target as Planet).side, position: { ...(target as Planet).position } };
+
+        emitPhaserEvent({
+            by,
+            from,
+            to,
+            distance,
+            energySpent,
+            target: targetRef,
+            result: Math.round(hita) > 0 ? "hit" : "no_effect",
+            damage: Math.max(0, Math.round(hita)),
+            shieldsBefore,
+            shieldsAfter,
+            crit: critdm > 0 ? { amount: critdm } : null,
+            killed: klflg === 1,
+        });
+    } catch {
+        /* never let telemetry break combat */
+    }
+
 
     return { hita, critdv, critdm, klflg, checkEndGame };
 }
+
 
 // --- Add this helper near your combat utilities ----------------------
 
@@ -695,21 +713,26 @@ export function sendFormattedMessageToObservers({
     }
 }
 
-function preparePhaserShot(attacker: Player, requestedPhit: number | undefined): { phit: number; energySpent: number } {
+function preparePhaserShot(
+    attacker: Player,
+    requestedPhit: number | undefined,
+    extraCost: number = 0              // ← NEW
+): { phit: number; energySpent: number } {
     // Default PHACON phit
     let phit = (requestedPhit ?? 0) > 0 ? requestedPhit! : 200;
 
-    // Cost is phit * 10 (integer scaling in original)
-    let energyCost = Math.floor(phit * 10);
+    // Baseline phaser cost is phit * 10; add the (fixed) extraCost (e.g., shield penalty)
+    let energyCost = Math.floor(phit * 10) + Math.max(0, Math.floor(extraCost));
 
-    // If not enough energy, scale phit down proportionally
     const ship = attacker.ship!;
     if (ship.energy < energyCost) {
-        phit = Math.max(0, Math.floor(ship.energy / 10));
-        energyCost = Math.floor(phit * 10);
+        // Scale phit down to fit available energy after paying extraCost
+        const availableForPhit = Math.max(0, ship.energy - Math.max(0, Math.floor(extraCost)));
+        phit = Math.max(0, Math.floor(availableForPhit / 10));
+        energyCost = Math.floor(phit * 10) + Math.max(0, Math.floor(extraCost));
     }
 
-    // Deduct the cost
+    // Deduct
     ship.energy = Math.max(0, ship.energy - energyCost);
 
     return { phit, energySpent: energyCost };

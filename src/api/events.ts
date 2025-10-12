@@ -28,7 +28,16 @@ export type EventType =
     | "ship_docked"
     | "ship_undocked"
     | "nova_triggered"
-    | "object_displaced";
+    | "object_displaced"
+    | "shields_toggled"
+    | "ship_hit"
+    | "ship_hull_changed"
+    | "shields_changed"
+    | "collapse_phaser"
+    | "collapse_torpedo"
+    | "base_destroyed"
+    | "other"
+    | "planet_hit";
 
 // --- payloads ---
 export type DockReason = "manual" | "auto" | "repair" | "resupply";
@@ -168,6 +177,20 @@ export type ShipLeftPayload = {
     | "disconnect" // ← added
     | "endgame"; // ← added
 };
+
+export type PlanetBaseRemovedReason =
+    | "collapse_phaser"
+    | "collapse_torpedo"
+    | "base_destroyed"
+    | "other";
+
+export type PlanetBaseRemovedPayload = {
+    planet: PlanetRef;              // current snapshot after removal
+    by?: AttackerRef;               // optional
+    reason?: PlanetBaseRemovedReason;
+    previousSide?: Side;            // who owned it before
+};
+
 
 // NEW — when a ship is actually removed from the world (rare; use only if you truly delete it)
 export type ShipDestroyedPayload = {
@@ -413,5 +436,213 @@ export function emitNovaTriggered(at: GridCoord, by?: Player | null) {
     return gameEvents.emit<NovaTriggeredPayload>({
         type: "nova_triggered",
         payload: { at, by: attackerRef(by ?? undefined) },
+    });
+}
+
+
+
+export type ShieldsToggledPayload = {
+    shipName: string;
+    side: Side;
+    at: GridCoord;
+    up: boolean;                 // true = raised, false = lowered
+    shieldEnergy: number;        // current energy after the toggle
+    delta?: { before: number; after: number }; // optional, if caller provides it
+};
+
+
+export function emitShieldsToggled(
+    player: Player,
+    up: boolean,
+    delta?: { before: number; after: number }
+) {
+    if (!player.ship) return;
+    return gameEvents.emit<ShieldsToggledPayload>({
+        type: "shields_toggled",
+        payload: {
+            shipName: player.ship.name,
+            side: player.ship.side,
+            at: { v: player.ship.position.v, h: player.ship.position.h },
+            up,
+            shieldEnergy: player.ship.shieldEnergy,
+            ...(delta ? { delta } : {}),
+        },
+    });
+}
+
+
+/* ========= DAMAGE EVENTS ========= */
+
+export type WeaponKind = "phaser" | "torpedo" | "nova" | "collision" | "other";
+
+/** Per-impact record when a ship takes damage (post-shield, hull applied) */
+export type ShipHitPayload = {
+    shipName: string;
+    side: Side;
+    at: GridCoord;
+
+    by?: AttackerRef;             // who dealt the hit (if applicable)
+    weapon: WeaponKind;
+
+    amount: number;               // hull damage actually applied (>=0)
+    crit?: { device?: string; amount?: number } | null;
+
+    shieldsBefore?: number;       // target shield/energy store BEFORE the hit (ship)
+    shieldsAfter?: number;        // …and AFTER
+    shieldsUpBefore?: boolean;    // convenience (if you track it)
+    shieldsUpAfter?: boolean;
+
+    killed?: boolean;             // ship destroyed as a result
+};
+
+
+
+/** Planet/base damage (you already have type "planet_hit"; here’s a helper) */
+export type PlanetHitPayload = {
+    planet: PlanetRef;
+    weapon: WeaponKind;
+    damage: number;               // hull/energy removed
+    destroyed?: boolean;          // base destroyed/planet disabled
+    by?: AttackerRef;
+};
+
+export function emitShipHit(
+    target: Player,
+    weapon: WeaponKind,
+    amount: number,
+    opts?: {
+        by?: Player | null;
+        crit?: { device?: string; amount?: number } | null;
+        shieldsBefore?: number;
+        shieldsAfter?: number;
+        shieldsUpBefore?: boolean;
+        shieldsUpAfter?: boolean;
+        killed?: boolean;
+    }
+) {
+    if (!target.ship) return;
+    const {
+        by = undefined,
+        crit = null,
+        shieldsBefore,
+        shieldsAfter,
+        shieldsUpBefore,
+        shieldsUpAfter,
+        killed,
+    } = opts || {};
+    return gameEvents.emit<ShipHitPayload>({
+        type: "ship_hit",
+        payload: {
+            shipName: target.ship.name,
+            side: target.ship.side,
+            at: { ...target.ship.position },
+            by: attackerRef(by ?? undefined),
+            weapon,
+            amount: Math.max(0, Math.round(amount)),
+            crit,
+            shieldsBefore,
+            shieldsAfter,
+            shieldsUpBefore,
+            shieldsUpAfter,
+            killed: !!killed,
+        },
+    });
+}
+
+export type ShipHullChangedPayload = {
+    shipName: string;
+    side: Side;
+    at: GridCoord;
+    energyBefore: number;
+    energyAfter: number;
+    damageBefore: number;
+    damageAfter: number;
+    reason: "phaser" | "torpedo" | "nova" | "collision" | "other";
+    by?: AttackerRef;
+};
+
+export function emitShipHullChanged(
+    victim: Player,
+    energyBefore: number,
+    energyAfter: number,
+    damageBefore: number,
+    damageAfter: number,
+    reason: ShipHullChangedPayload["reason"],
+    byPlayer?: Player | null
+) {
+    if (!victim.ship) return;
+    return gameEvents.emit<ShipHullChangedPayload>({
+        type: "ship_hull_changed",
+        payload: {
+            shipName: victim.ship.name,
+            side: victim.ship.side,
+            at: { v: victim.ship.position.v, h: victim.ship.position.h },
+            energyBefore,
+            energyAfter,
+            damageBefore,
+            damageAfter,
+            reason,
+            by: attackerRef(byPlayer ?? undefined),
+        },
+    });
+}
+
+
+export function emitPlanetHit(
+    planet: Planet,
+    weapon: WeaponKind,
+    damage: number,
+    destroyed?: boolean,
+    by?: Player | null
+) {
+    return gameEvents.emit<PlanetHitPayload>({
+        type: "planet_hit",
+        payload: {
+            planet: planetRef(planet),
+            weapon,
+            damage: Math.max(0, Math.round(damage)),
+            destroyed: !!destroyed,
+            by: attackerRef(by ?? undefined),
+        },
+    });
+}
+
+export function emitShieldsChanged(p: Player, before: number, after: number) {
+    if (!p.ship) return;
+    if (before === after) return;
+    return gameEvents.emit<ShieldsChangedPayload>({
+        type: "shields_changed",
+        payload: {
+            shipName: p.ship.name,
+            side: p.ship.side,
+            at: { v: p.ship.position.v, h: p.ship.position.h },
+            before,
+            after,
+        },
+    });
+}
+
+export type ShieldsChangedPayload = {
+    shipName: string;
+    side: Side;
+    at: GridCoord;
+    before: number;
+    after: number;
+};
+
+export function emitPlanetBaseRemoved(
+    planet: Planet,
+    reason: PlanetBaseRemovedReason = "other",
+    by?: Player | null,
+    previousSide?: Side
+) {
+    return gameEvents.emit<PlanetBaseRemovedPayload>({
+        type: "planet_base_removed",
+        payload: {
+            planet: planetRef(planet),
+            by: attackerRef(by ?? undefined),
+            reason,
+            previousSide,
+        },
     });
 }
