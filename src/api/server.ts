@@ -1,10 +1,11 @@
 // src/api/server.ts
-import express from "express";
-import type { Request, Response } from "express";
+import express, { type Request, type Response } from "express";
 import cors from "cors";
 
 import type { GameStateProvider } from "./provider.js";
 import { gameEvents, type EventType } from "./events.js";
+import { paginate } from "./pagination.js";
+import { sseRouter } from "./sse.js";
 
 /**
  * Start the read-only API server with a provider injected from the game process.
@@ -15,6 +16,7 @@ export function startApiServer(provider: GameStateProvider, opts?: { port?: numb
     app.use(cors());
     app.use(express.json());
 
+    // ---- basic state endpoints ----
     app.get("/api/health", (_req: Request, res: Response) => {
         res.json({ ok: true });
     });
@@ -47,81 +49,50 @@ export function startApiServer(provider: GameStateProvider, opts?: { port?: numb
      * LIVE EVENTS (SSE + snapshot)
      * ------------------------- */
 
-    // GET /api/events
-    //   ?types=phaser,torpedo      (optional filter)
-    //   ?since=1234                (optional catch-up; or use Last-Event-ID)
-    app.get("/api/events", (req, res) => {
-        // SSE headers
-        res.setHeader("Content-Type", "text/event-stream");
-        res.setHeader("Cache-Control", "no-cache, no-transform");
-        res.setHeader("Connection", "keep-alive");
-        res.flushHeaders?.();
+    // Mount the SSE router at /api so GET /api/events streams live events
+    app.use("/api", sseRouter);
 
-        const typeParam = (req.query.types as string | undefined) ?? "";
-        const typesArr = typeParam
+    // GET /api/events/snapshot
+    //   ?types=phaser,torpedo            (optional filter)
+    //   ?since=1234                      (optional catch-up id)
+    //   ?page=1&pageSize=200             (optional pagination)
+    app.get("/api/events/snapshot", (req: Request, res: Response) => {
+        const sinceRaw = req.query.since as string | undefined;
+        const sinceNum = sinceRaw ? Number(sinceRaw) : undefined;
+        const since = Number.isFinite(sinceNum!) ? (sinceNum as number) : undefined;
+
+        const typesRaw = (req.query.types as string | undefined) ?? "";
+        const typesArr = typesRaw
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean) as EventType[];
 
-        const sinceQs = req.query.since ? Number(req.query.since) : undefined;
-        const sinceHeader = req.header("Last-Event-ID")
-            ? Number(req.header("Last-Event-ID"))
-            : undefined;
-        const since = Number.isFinite(sinceQs)
-            ? sinceQs
-            : Number.isFinite(sinceHeader)
-                ? sinceHeader
-                : undefined;
-
-        // Helper to write SSE event
-        const send = (evt: any) => {
-            res.write(`event: ${evt.type}\n`);
-            res.write(`id: ${evt.id}\n`);
-            res.write(`data: ${JSON.stringify(evt)}\n\n`);
-        };
-
-        // Initial replay (if any)
-        const replay = gameEvents.getSince(since, typesArr.length ? typesArr : undefined);
-        for (const evt of replay) send(evt);
-
-        // Subscribe to new events
-        const unsub = gameEvents.subscribe((evt) => {
-            if (typesArr.length && !typesArr.includes(evt.type)) return;
-            send(evt);
-        });
-
-        // Heartbeat
-        const heartbeat = setInterval(() => res.write(`: ping ${Date.now()}\n\n`), 15000);
-
-        // Cleanup
-        req.on("close", () => {
-            clearInterval(heartbeat);
-            unsub();
-        });
-    });
-
-    // GET /api/events/snapshot?since=123&types=a,b
-    app.get("/api/events/snapshot", (req, res) => {
-        const since = req.query.since ? Number(req.query.since) : undefined;
-
-        const typeParam = (req.query.types as string | undefined) ?? "";
-        const typesArr = typeParam
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean) as EventType[];
+        // pagination with sane bounds
+        const pageRaw = req.query.page as string | undefined;
+        const pageSizeRaw = req.query.pageSize as string | undefined;
+        const page = Math.max(1, Number.isFinite(Number(pageRaw)) ? Number(pageRaw) : 1);
+        const requestedPageSize = Number.isFinite(Number(pageSizeRaw)) ? Number(pageSizeRaw) : 100;
+        const pageSize = Math.min(Math.max(1, requestedPageSize), 1000);
 
         const events = gameEvents.getSince(
-            Number.isFinite(since) ? since : undefined,
+            since,
             typesArr.length ? typesArr : undefined
         );
 
-        // Compute latest id from the entire buffer, not just filtered set
-        const globalLatest = gameEvents.getSince(undefined).slice(-1)[0]?.id ?? 0;
+        // latest id from entire buffer (prefer helper if present)
+        const globalLatest =
+            typeof (gameEvents as any).latestId === "function"
+                ? (gameEvents as any).latestId()
+                : gameEvents.getSince(undefined).slice(-1)[0]?.id ?? 0;
+
+        const result = paginate(events, { page, pageSize, maxPageSize: 1000 });
 
         res.json({
             latest: globalLatest,
-            count: events.length,
-            events,
+            count: result.total,
+            page: result.page,
+            pageSize: result.pageSize,
+            events: result.items,
         });
     });
 

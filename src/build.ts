@@ -1,16 +1,30 @@
 import { getCoordsFromCommandArgs, chebyshev, ocdefCoords } from "./coords.js";
-import { planets } from "./game.js";
-import { MAX_BUILDS_PER_PLANET, BUILD_DELAY_MIN_MS, BUILD_DELAY_RANGE, MAX_BASES_PER_TEAM } from "./settings.js";
-import { putClientOnHold, releaseClient, sendOutputMessage, sendMessageToClient } from "./communication.js";
-//import { starbasePhaserDefense } from "./base.js";
-import { bases } from "./game.js";
+import { planets, bases } from "./game.js";
+import {
+    MAX_BUILDS_PER_PLANET,
+    BUILD_DELAY_MIN_MS,
+    BUILD_DELAY_RANGE,
+    MAX_BASES_PER_TEAM,
+} from "./settings.js";
+import {
+    putClientOnHold,
+    releaseClient,
+    sendOutputMessage,
+    sendMessageToClient,
+} from "./communication.js";
 import { Player } from "./player.js";
 import { Command } from "./command.js";
-import { gameEvents } from "./api/events.js";
+
+// NEW: make sure these are exported from your events module per our earlier patch
+import { gameEvents, planetRef, attackerRef } from "./api/events.js";
 
 export function buildCommand(player: Player, command: Command, done?: () => void): void {
+    // ---- quick argument / state checks ----
     if (command.args.length < 2) {
-        sendMessageToClient(player, "Usage: BUILD [A|R] <vpos> <hpos> — specify vertical and horizontal coordinates.");
+        sendMessageToClient(
+            player,
+            "Usage: BUILD [A|R] <vpos> <hpos> — specify vertical and horizontal coordinates."
+        );
         done?.();
         return;
     }
@@ -20,8 +34,17 @@ export function buildCommand(player: Player, command: Command, done?: () => void
         return;
     }
 
-    const { position: { v: targetV, h: targetH }, mode, error } =
-        getCoordsFromCommandArgs(player, command.args, player.ship.position.v, player.ship.position.h, false);
+    const {
+        position: { v: targetV, h: targetH },
+        mode,
+        error,
+    } = getCoordsFromCommandArgs(
+        player,
+        command.args,
+        player.ship.position.v,
+        player.ship.position.h,
+        false
+    );
 
     if (error) {
         sendMessageToClient(player, `${error} for mode ${mode}`);
@@ -29,16 +52,24 @@ export function buildCommand(player: Player, command: Command, done?: () => void
         return;
     }
 
+    // must be adjacent to the target planet
     if (chebyshev(player.ship.position, { v: targetV, h: targetH }) > 1) {
-        sendMessageToClient(player, "BUILD failed: you must be adjacent (1 grid unit) to the target planet.");
+        sendMessageToClient(
+            player,
+            "BUILD failed: you must be adjacent (1 grid unit) to the target planet."
+        );
         done?.();
         return;
     }
 
-    const planet = planets.find(p => p.position.h === targetH && p.position.v === targetV);
+    const planet = planets.find((p) => p.position.h === targetH && p.position.v === targetV);
 
     if (!planet) {
-        const coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: targetV, h: targetH });
+        const coords = ocdefCoords(
+            player.settings.ocdef,
+            player.ship.position,
+            { v: targetV, h: targetH }
+        );
         sendMessageToClient(player, `No known planet at ${coords}. BUILD aborted.`);
         done?.();
         return;
@@ -50,8 +81,14 @@ export function buildCommand(player: Player, command: Command, done?: () => void
         return;
     }
 
-    if (planet.side !== player.ship.side) {
+    if (!player.ship || planet.side !== player.ship.side) {
         sendMessageToClient(player, `BUILD denied: planet is held by the ${planet.side}.`);
+        done?.();
+        return;
+    }
+
+    if (planet.isBase) {
+        sendMessageToClient(player, "This planet is already a starbase.");
         done?.();
         return;
     }
@@ -62,49 +99,80 @@ export function buildCommand(player: Player, command: Command, done?: () => void
         return;
     }
 
+    // ---- async build action with jitter ----
     const delayMs = BUILD_DELAY_MIN_MS + Math.random() * BUILD_DELAY_RANGE;
 
     putClientOnHold(player, "Building...");
     const timer = setTimeout(() => {
         releaseClient(player);
+
+        // Re-validate state — things may have changed while we waited
         if (!player.ship) {
             sendMessageToClient(player, "You must be in a ship to build.");
             done?.();
             return;
         }
 
+        // Planet could have changed ownership or become a base in the meantime
+        if (planet.side !== player.ship.side) {
+            sendMessageToClient(player, `BUILD denied: planet is now held by the ${planet.side}.`);
+            done?.();
+            return;
+        }
+        if (planet.isBase) {
+            sendMessageToClient(player, "This planet is already a starbase.");
+            done?.();
+            return;
+        }
+        if (planet.builds >= MAX_BUILDS_PER_PLANET) {
+            sendMessageToClient(player, "BUILD limit reached: this planet is fully fortified.");
+            done?.();
+            return;
+        }
+
+        // Apply the build
         planet.builds += 1;
 
         gameEvents.emit({
             type: "planet_builds_changed",
             payload: {
-                planet: {
-                    name: planet.name,
-                    side: planet.side,
-                    position: { v: planet.position.v, h: planet.position.h },
-                    builds: planet.builds
-                },
-                by: {
-                    shipName: player.ship!.name,
-                    side: player.ship!.side
-                }
-            }
+                planet: planetRef(planet),
+                delta: +1,
+                newBuilds: planet.builds,
+                reason: "build",
+                by: attackerRef(player),
+            },
         });
 
+        // award points the instant the 5th build lands (kept to your original rule)
         if (planet.builds === 5) {
             player.points.basesBuilt += 1;
         }
-        if (planet.builds === MAX_BUILDS_PER_PLANET) {
+
+        // If we just hit or exceeded the cap, try to promote to a base
+        if (planet.builds >= MAX_BUILDS_PER_PLANET) {
             const teamBases = player.ship.side === "FEDERATION" ? bases.federation : bases.empire;
-            if (teamBases.length >= MAX_BASES_PER_TEAM + 10) {  // TODO: remove the + 10
-                sendMessageToClient(player, `Maximum number of ${player.ship.side} starbases already active.`);
+
+            // enforce the real cap (no +10 fudge)
+            if (teamBases.length >= MAX_BASES_PER_TEAM) {
+                sendMessageToClient(
+                    player,
+                    `Maximum number of ${player.ship.side} starbases already active.`
+                );
                 done?.();
                 return;
             }
 
-            planet.makeBase(player.ship.side);
+            // promote atomically; if another thread already promoted, isBase will be true and we just message
+            if (!planet.isBase) {
+                planet.makeBase(player.ship.side);
+            }
 
-            const coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: targetV, h: targetH });
+            const coords = ocdefCoords(
+                player.settings.ocdef,
+                player.ship.position,
+                { v: targetV, h: targetH }
+            );
 
             sendOutputMessage(player, {
                 SHORT: `Base created.`,
@@ -115,32 +183,32 @@ export function buildCommand(player: Player, command: Command, done?: () => void
             gameEvents.emit({
                 type: "planet_base_created",
                 payload: {
-                    planet: {
-                        name: planet.name,
-                        side: planet.side,
-                        position: { v: planet.position.v, h: planet.position.h },
-                        energy: planet.energy,          // DEFAULT_BASE_ENERGY after makeBase()
-                        builds: planet.builds
-                    },
-                    by: {
-                        shipName: player.ship!.name,
-                        side: player.ship!.side
-                        // If you want, you can also include: ip: player.auth?.ip
-                    }
-                }
+                    planet: planetRef(planet),
+                    by: attackerRef(player),
+                },
             });
-        }
-        else {
-            const coords = ocdefCoords(player.settings.ocdef, player.ship.position, { v: targetV, h: targetH });
 
+            done?.();
+            return;
+        }
+
+        // Otherwise, just report progress
+        {
+            const coords = ocdefCoords(
+                player.settings.ocdef,
+                player.ship.position,
+                { v: targetV, h: targetH }
+            );
             sendOutputMessage(player, {
                 SHORT: `+1 build.`,
                 MEDIUM: `Now ${planet.builds} build${planet.builds === 1 ? "" : "s"}.`,
                 LONG: `One build added. Planet at ${coords} now has ${planet.builds} build${planet.builds === 1 ? "" : "s"}.`,
             });
         }
+
         done?.();
     }, delayMs);
+
     player.currentCommandTimer = timer;
-    //starbasePhaserDefense(player); TODO: Add starbase phaser defense
+    // starbasePhaserDefense(player); // TODO: Add starbase phaser defense
 }

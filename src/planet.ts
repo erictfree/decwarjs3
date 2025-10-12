@@ -6,7 +6,7 @@ import { getNearbyAlliedShips } from './ship.js';
 import { addPendingMessage } from './communication.js';
 import { Player } from './player.js';
 import { players } from './game.js';
-import { emitBaseBuilt } from './api/events.js';
+import { emitBaseBuilt } from "./api/events.js";
 
 interface CaptureLock {
     status: boolean;
