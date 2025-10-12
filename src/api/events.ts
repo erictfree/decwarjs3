@@ -36,12 +36,29 @@ export type EventType =
     | "collapse_phaser"
     | "collapse_torpedo"
     | "base_destroyed"
-    | "other"
-    | "planet_hit";
+    | "planet_hit"
+    | "comms"
+    | "other";
 
 // --- payloads ---
 export type DockReason = "manual" | "auto" | "repair" | "resupply";
 export type UndockReason = "manual" | "launch" | "forced" | "base_destroyed" | "nova" | "other" | "blackhole";
+
+
+// --- Recipient type for comms ---
+export type CommsRecipient =
+    | { kind: "GLOBAL" }
+    | { kind: "SIDE"; side: Side }
+    | { kind: "SHIP"; shipName: string; side: Side };
+
+export type CommsEventPayload = {
+    id: string;                     // server-generated message id (uuid or short id)
+    at: number;                     // Date.now()
+    from: { shipName: string; side: Side };
+    to: CommsRecipient;
+    text: string;                   // raw text as sent
+};
+
 
 
 export type GridCoord = { v: number; h: number };
@@ -645,4 +662,39 @@ export function emitPlanetBaseRemoved(
             previousSide,
         },
     });
+}
+
+
+const msgId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+export function emitComms(from: Player, to: CommsRecipient, text: string) {
+    if (!from.ship) return;
+    gameEvents.emit({
+        type: "comms",
+        payload: {
+            id: msgId(),
+            at: Date.now(),
+            from: attackerRef(from),   // { shipName, side }
+            to,
+            text,
+        },
+    });
+}
+
+// --- Emitter helper ---
+export function emitCommsSent(
+    from: Player,
+    to: CommsRecipient,
+    text: string,
+    id?: string
+): void {
+    if (!from.ship) return;
+    const payload: CommsEventPayload = {
+        id: id ?? Math.random().toString(36).slice(2), // replace with your uuid if you prefer
+        at: Date.now(),
+        from: { shipName: from.ship.name, side: from.ship.side },
+        to,
+        text,
+    };
+    gameEvents.emit({ type: "comms", payload });
 }

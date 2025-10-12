@@ -4,6 +4,8 @@ import { players } from './game.js';
 import { addPendingMessage, sendMessageToClient } from './communication.js';
 import { SHIPNAMES } from './settings.js';
 import { matchesPattern } from './util/util.js';
+// 👇 NEW: event emitter for chat/comms
+import { emitCommsSent } from './api/events.js';
 
 export function tellCommand(player: Player, command: Command): void {
     if (!player.ship) {
@@ -94,7 +96,41 @@ export function tellCommand(player: Player, command: Command): void {
         return;
     }
 
-    // --- Deliver messages ---
+    // --- Emit ONE comms event describing what was sent ---
+    try {
+        if (matchGroup) {
+            let to:
+                | { kind: "GLOBAL" }
+                | { kind: "SIDE"; side: "FEDERATION" | "EMPIRE" };
+
+            if (matchGroup === "ALL") {
+                to = { kind: "GLOBAL" };
+            } else if (matchGroup === "FEDERATION" || matchGroup === "HUMAN") {
+                to = { kind: "SIDE", side: "FEDERATION" };
+            } else if (matchGroup === "EMPIRE" || matchGroup === "KLINGON") {
+                to = { kind: "SIDE", side: "EMPIRE" };
+            } else if (matchGroup === "FRIENDLY") {
+                // Narrow Side → "FEDERATION" | "EMPIRE"
+                const mySide = player.ship!.side === "FEDERATION" ? "FEDERATION" : "EMPIRE" as const;
+                to = { kind: "SIDE", side: mySide };
+            } else { // ENEMY
+                const enemySide = player.ship!.side === "FEDERATION" ? "EMPIRE" : "FEDERATION" as const;
+                to = { kind: "SIDE", side: enemySide };
+            }
+
+            emitCommsSent(player, to, message);
+        } else {
+            // ship-directed: emit one event per explicit ship
+            for (const r of recipients) {
+                if (!r.ship) continue;
+                emitCommsSent(player, { kind: "SHIP", shipName: r.ship.name, side: r.ship.side === "FEDERATION" ? "FEDERATION" : "EMPIRE" }, message);
+            }
+        }
+    } catch {
+        // never let telemetry break gameplay
+    }
+
+    // --- Deliver messages (unchanged behavior) ---
     for (const recipient of recipients) {
         if (recipient !== player) {
             if (recipient.radioOn) {
