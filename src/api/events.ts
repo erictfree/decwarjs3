@@ -42,12 +42,7 @@ export type NovaTriggeredPayload = {
     by?: AttackerRef;           // who caused it (torp shooter)
 };
 
-export function emitNovaTriggered(at: GridCoord, by?: Player | null) {
-    return gameEvents.emit<NovaTriggeredPayload>({
-        type: "nova_triggered",
-        payload: { at, by: attackerRef(by ?? undefined) },
-    });
-}/** Generic displacement (nova shockwave, blackhole, etc.) */
+/** Generic displacement (nova shockwave, blackhole, etc.) */
 export function emitObjectDisplaced(
     kind: ObjectDisplacedPayload["kind"],
     name: string | undefined,
@@ -60,6 +55,53 @@ export function emitObjectDisplaced(
         payload: { kind, name, from, to, reason },
     });
 }
+
+
+export type TargetRef =
+    | { kind: "ship"; name: string; side: Side; position: GridCoord }
+    | { kind: "base"; name: string; side: Side; position: GridCoord }
+    | { kind: "planet"; name: string; side: Side; position: GridCoord }
+    | { kind: "star"; position: GridCoord }
+    | { kind: "blackhole"; position: GridCoord };
+
+
+export type PhaserEventPayload = {
+    by: { shipName: string; side: Side };
+    from: GridCoord;
+    to: GridCoord;                   // aimed sector
+    distance: number;
+    energySpent: number;             // actual energy consumed
+    target?: TargetRef;              // resolved target (if any)
+    result: "hit" | "miss" | "no_effect" | "friendly_block" | "out_of_range" | "no_target";
+    damage?: number;                 // hull/energy that got through shields
+    shieldsBefore?: number;          // target shields/energy store (ship: 0..MAX, base: 0..1000)
+    shieldsAfter?: number;
+    crit?: { device?: string; amount?: number } | null;
+    killed?: boolean;                // ship/base destroyed as a result of this phaser
+};
+
+export type TorpedoEventPayload = {
+    by: { shipName: string; side: Side };
+    from: GridCoord;
+    // what the shooter asked for
+    aim: GridCoord;
+    // what actually happened
+    collision:
+    | { kind: "ship"; name: string; side: Side; position: GridCoord }
+    | { kind: "base"; name: string; side: Side; position: GridCoord }
+    | { kind: "planet"; name: string; side: Side; position: GridCoord }
+    | { kind: "star"; position: GridCoord }
+    | { kind: "blackhole"; position: GridCoord }
+    | { kind: "boundary"; position: GridCoord }
+    | { kind: "none" };
+    result: "hit" | "deflected" | "no_effect" | "out_of_range" | "self_target" | "fizzled";
+    damage?: number;                 // applied hull/base damage (post-shield scaling)
+    crit?: { device?: string; amount?: number } | null;
+    shieldsBefore?: number;
+    shieldsAfter?: number;
+    killed?: boolean;                // ship/base destroyed by this torpedo
+    novaTriggered?: boolean;         // if your torp set off a nova
+};
 
 export type ShipDockedPayload = {
     shipName: string;
@@ -343,17 +385,6 @@ export function emitShipUndocked(
     });
 }
 
-export function triggerNovaAt(
-    source: Player | undefined,
-    v: number,
-    h: number
-): void {
-    // Tell clients a nova just started here
-    emitNovaTriggered({ v, h }, source);
-
-    // …the rest of your nova logic (shockwave, displacements, damage, etc.)…
-}
-
 
 
 
@@ -364,3 +395,23 @@ export type ObjectDisplacedPayload = {
     to: GridCoord;
     reason: "nova" | "blackhole" | "other";
 };
+
+export function emitPhaserEvent(payload: PhaserEventPayload) {
+    return gameEvents.emit<PhaserEventPayload>({ type: "phaser", payload });
+}
+
+// export function emitTorpedoEvent(payload: TorpedoEventPayload) {
+//     return gameEvents.emit<TorpedoEventPayload>({ type: "torpedo", payload });
+// }
+
+// export function emitTorpedoEvent(payload: TorpedoEventPayload) {
+//     return gameEvents.emit<TorpedoEventPayload>({ type: "torpedo", payload });
+// }
+
+
+export function emitNovaTriggered(at: GridCoord, by?: Player | null) {
+    return gameEvents.emit<NovaTriggeredPayload>({
+        type: "nova_triggered",
+        payload: { at, by: attackerRef(by ?? undefined) },
+    });
+}

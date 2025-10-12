@@ -143,6 +143,7 @@ export function triggerNovaAt(player: Player, v: number, h: number): void {
                     sendMessageToClient(other, `Your ship was displaced to ${newV}-${newH} by a nova!`);
                     break;
                 }
+                //TODO and what if another ship or planet?
             }
             // Removed: if (!displaced) { disconnectTractorWithReason(other.ship, "nova"); }
         }

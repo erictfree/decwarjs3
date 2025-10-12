@@ -12,6 +12,7 @@ import { players, planets, bases, removePlayerFromGame, checkEndGame, pointsMana
 import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
 import { SHIP_FATAL_DAMAGE, PLANET_PHASER_RANGE } from './game.js';
 import { gameEvents, attackerRef, emitShipDestroyed } from './api/events.js';
+import { planetRef } from './api/events.js';
 
 
 import type { Side } from "./settings.js";
@@ -157,6 +158,7 @@ export function phaserCommand(player: Player, command: Command): void {
         checkEndGame();
     }
 }
+
 export function applyPhaserDamage(
     attacker: Player,
     target: Player | Planet,
@@ -223,6 +225,39 @@ export function applyPhaserDamage(
     const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
     const toPct = (energy: number, max: number) => (max > 0 ? clamp((energy / max) * 1000, 0, 1000) : 0);
     const prevShieldPct = toPct(rawShieldEnergy, rawShieldMax);
+
+    // --- Telemetry: single authoritative phaser fire event ---------------
+    try {
+        const by = attackerRef(attacker);
+        if (target instanceof Player && target.ship) {
+            gameEvents.emit({
+                type: "phaser",
+                payload: {
+                    by,                               // { ship:{name, side} }
+                    from: attackerPos,                // attacker location
+                    to: targetPos,                    // target location (client uses this)
+                    target: {                         // optional richer info for logs
+                        type: "ship",
+                        ship: { name: target.ship.name, side: target.ship.side, position: { ...target.ship.position } }
+                    },
+                    distance
+                }
+            });
+        } else {
+            const p = target as Planet;
+            gameEvents.emit({
+                type: "phaser",
+                payload: {
+                    by,
+                    from: attackerPos,
+                    to: targetPos,                    // also set, so client flash works
+                    planet: planetRef(p),             // client also checks .planet.position
+                    distance
+                }
+            });
+        }
+    } catch { /* never let telemetry break combat */ }
+
 
     const core = phadamCore({
         targetIsBase,

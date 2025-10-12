@@ -194,6 +194,33 @@ function getTargetsFromCommand(player: Player, args: string[], mode: "ABSOLUTE" 
 
     return targets;
 }
+function emitTorpedoEvent(attacker: Player, from: Point, aim: Point, coll: TorpedoCollision) {
+    if (!attacker.ship || !coll) return;
+
+    const by = { shipName: attacker.ship.name, side: attacker.ship.side };
+
+    const collision =
+        coll.type === "ship" ? { kind: "ship", name: coll.player.ship!.name, side: coll.player.ship!.side, position: { ...coll.player.ship!.position } } :
+            coll.type === "planet" ? (coll.planet.isBase
+                ? { kind: "base", name: coll.planet.name, side: coll.planet.side, position: { ...coll.planet.position } }
+                : { kind: "planet", name: coll.planet.name, side: coll.planet.side, position: { ...coll.planet.position } }) :
+                coll.type === "star" ? { kind: "star", position: { ...coll.star.position } } :
+                    coll.type === "blackhole" ? { kind: "blackhole", position: { ...coll.blackhole.position } } :
+                        coll.type === "boundary" ? { kind: "boundary", position: { ...coll.point } } :
+                            { kind: "none" };
+
+    gameEvents.emit({
+        type: "torpedo",
+        payload: {
+            by,
+            from: { v: from.v, h: from.h },
+            aim: { v: aim.v, h: aim.h },
+            collision
+            // (optional) result/damage/crit/killed/novaTriggered can be added later
+        },
+    });
+}
+
 
 export function torpedoCommand(player: Player, command: Command, done?: () => void): void {
     const args = command.args;
@@ -269,6 +296,10 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
         if (!collision) {
             continue;
         }
+
+        // single authoritative telemetry event
+        emitTorpedoEvent(player, player.ship.position, target, collision);
+
         let fired = false;
         switch (collision?.type) {
             case "ship": {
