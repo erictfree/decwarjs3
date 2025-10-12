@@ -103,7 +103,12 @@ export function phaserCommand(player: Player, command: Command): void {
         return;
     }
 
-    const { position: { v: targetV, h: targetH } } = getCoordsFromCommandArgs(player, args, player.ship.position.v, player.ship.position.h, true);
+    // const { position: { v: targetV, h: targetH } } = getCoordsFromCommandArgs(player, args, player.ship.position.v, player.ship.position.h, true);
+    // const distance = chebyshev(player.ship.position, { v: targetV, h: targetH });
+
+    const { position: { v: targetV, h: targetH } } =
+        getCoordsFromCommandArgs(player, args, player.ship.position.v, player.ship.position.h, true);
+
     const distance = chebyshev(player.ship.position, { v: targetV, h: targetH });
 
     if (distance > 10) {
@@ -118,8 +123,7 @@ export function phaserCommand(player: Player, command: Command): void {
     //player.ship.energy -= totalEnergyCost;  double counting of energy
     player.ship.condition = "RED";
 
-    const target = players.find(p => p.ship && p.ship.position.h === targetH && p.ship.position.v === targetV) ||
-        planets.find(p => p.position.h === targetH && p.position.v === targetV && p.isBase);
+    const target = findTargetAt(targetV, targetH);
     if (!target) {
         switch (player.settings.output) {
             case "SHORT": sendMessageToClient(player, "PH > MISS"); break;
@@ -158,6 +162,24 @@ export function phaserCommand(player: Player, command: Command): void {
     if (result.checkEndGame) {
         checkEndGame();
     }
+}
+
+function findTargetAt(v: number, h: number): Player | Planet | null {
+    // 1) Ship
+    const ship = players.find(p => p.ship && p.ship.position.v === v && p.ship.position.h === h);
+    if (ship) return ship;
+
+    // 2) Base via planets (preferred if flagged)
+    const planetAt = planets.find(p => p.position.v === v && p.position.h === h);
+    if (planetAt?.isBase) return planetAt;
+
+    // 3) Base via bases lists (in case isBase flag isn’t synced)
+    const baseOnly = [...bases.federation, ...bases.empire]
+        .find(b => b.position.v === v && b.position.h === h);
+    if (baseOnly) return baseOnly;
+
+    // 4) Plain planet (non-base)
+    return planetAt ?? null;
 }
 
 export function applyPhaserDamage(
