@@ -12,7 +12,8 @@ import { isInBounds, getCoordsFromCommandArgs, findObjectAtPosition, ocdefCoords
 import { Player } from "./player.js";
 import { Command } from "./command.js";
 import { gameEvents } from "./api/events.js";
-import { ShipMovedPayload } from "./api/events.js";
+import { ShipMovedPayload, emitShipUndocked } from "./api/events.js";
+
 
 import { disconnectTractor } from "./tractor.js";
 
@@ -115,8 +116,21 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
     }
 
     if (ship.docked) {
+        const planet = ship.dockPlanet; // full Planet object (may be null)
+
+        // flip state first
         ship.docked = false;
-        sendMessageToClient(player, "You have undocked from the base.");
+        ship.dockPlanet = null;
+
+        // emit SSE event (only if we know where we were docked)
+        if (planet) {
+            emitShipUndocked(player, planet, "launch");
+            const where = planet.isBase ? `${planet.side} base ${planet.name}` : `planet ${planet.name}`;
+            sendMessageToClient(player, `You have undocked from ${where}.`);
+        } else {
+            // fallback (edge cases where the planet ref was lost)
+            sendMessageToClient(player, "You have undocked from the base.");
+        }
     }
 
     // —— Collision Detection ——  
@@ -289,8 +303,21 @@ export function impulseCommand(player: Player, command: Command, done?: () => vo
     }
 
     if (ship.docked) {
+        const planet = ship.dockPlanet; // full Planet object (may be null)
+
+        // flip state first
         ship.docked = false;
-        sendMessageToClient(player, "You have undocked.");
+        ship.dockPlanet = null;
+
+        // emit SSE event (only if we know where we were docked)
+        if (planet) {
+            emitShipUndocked(player, planet, "launch");
+            const where = planet.isBase ? `${planet.side} base ${planet.name}` : `planet ${planet.name}`;
+            sendMessageToClient(player, `You have undocked from ${where}.`);
+        } else {
+            // fallback (edge cases where the planet ref was lost)
+            sendMessageToClient(player, "You have undocked from the base.");
+        }
     }
 
     ship.energy -= energyCost;

@@ -26,6 +26,7 @@ import { addEmailToMailchimp } from './util/email.js';
 import { setRandomSeed } from './util/random.js';
 import { players } from './game.js';
 import { pointsManager } from './game.js';
+import { emitShipJoined } from './api/events.js';
 
 // Map of pre-game command keys to their handlers
 const pgCommands = new Map<string, CommandHandler>([
@@ -376,6 +377,7 @@ export function promptForShip(player: Player, iter: number): void {
         } else if (side == "EMPIRE") {
             pointsManager.incrementShipsCommissioned('EMPIRE');
         }
+        emitShipJoined(player, "launch"); // or "assign"/"reconnect"
 
         players.push(player);
         sendMessageToClient(player, `\r\nDECWARJS game #${settings.gameNumber}, ${settings.tournamentSeed}\r\n\r\n`, false, true);

@@ -80,10 +80,7 @@ export function startApiServer(provider: GameStateProvider, opts?: { port?: numb
         );
 
         // latest id from entire buffer (prefer helper if present)
-        const globalLatest =
-            typeof (gameEvents as any).latestId === "function"
-                ? (gameEvents as any).latestId()
-                : gameEvents.getSince(undefined).slice(-1)[0]?.id ?? 0;
+        const globalLatest = gameEvents.latestId();
 
         const result = paginate(events, { page, pageSize, maxPageSize: 1000 });
 

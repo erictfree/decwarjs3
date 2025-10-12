@@ -15,10 +15,12 @@ import { planetPhaserDefense } from "./phaser.js";
 import { baseEnergyRegeneration } from "./planet.js";
 export const SHIP_FATAL_DAMAGE = 25000;  // adjusted for fortran derived code
 import { romulanApproachTick } from "./romulan.js";
+import { emitShipDestroyed, emitShipLeft } from "./api/events.js";
+
 
 // bot imports
 import { updateBots, botChatterTick } from "./bots/bot.js";
-import { spawnAndRegisterBot } from "./bots/register.js";
+//import { spawnAndRegisterBot } from "./bots/register.js";
 
 
 
@@ -214,6 +216,7 @@ function checkForInactivity() {
 
         if (inactiveTime >= INACTIVITY_TIMEOUT) {
             sendMessageToClient(player, "Captain, you have been inactive for too long. You have been removed from the game.");
+            emitShipLeft(player, "timeout");
             removePlayerFromGame(player);
 
         }
@@ -256,6 +259,7 @@ export function performPlanetOrBaseAttacks(base: boolean = false): void {
 function checkForDisconnectedPlayers() {
     for (const player of players) {
         if (!isSocketLive(player.socket)) {
+            emitShipLeft(player, "disconnect");
             removePlayerFromGame(player);
         }
     }
@@ -310,6 +314,7 @@ export function checkEndGame(): void {
 
         for (let i = players.length - 1; i >= 0; i--) {
             const player = players[i];
+            emitShipLeft(player, "endgame");
             removePlayerFromGame(player);
             if (!player.ship) continue;
 
@@ -345,6 +350,8 @@ export function checkForBlackholes(): void {
         if (blackholes.some(bh => bh.position.v === v && bh.position.h === h)) {
             sendMessageToClient(player,
                 "\r\nYou have fallen into a black hole. Your ship is crushed and annihilated.");
+            emitShipDestroyed(ship.name, ship.side, { v, h }, /* by */ undefined, "blackhole");
+
             removePlayerFromGame(player);
             sendMessageToClient(player, "", true, true);
         }

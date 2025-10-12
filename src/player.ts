@@ -5,6 +5,8 @@ import { players, removePlayerFromGame } from './game.js';
 import { Side, ScanSetting, PromptSetting, OCDEF, ICDEF, OutputSetting, MAX_SHIELD_ENERGY } from './settings.js';
 import { AuthSession } from './util/auth.js';
 import { findEmptyLocation } from './coords.js';
+import { emitShipLeft, emitShipDestroyed } from './api/events.js';
+
 
 const suffocationMessages = [
     "Life support failed. Your crew drew their final breaths and fell silent.",
@@ -206,6 +208,15 @@ export class Player {
                     sendMessageToClient(this, `Life support failure: ${this.ship.lifeSupportFailureTimer} stardates remaining.`);
                 } else {
                     sendMessageToClient(this, suffocationMessages[Math.floor(Math.random() * suffocationMessages.length)]);
+                    if (this.ship) {
+                        emitShipDestroyed(
+                            this.ship.name,
+                            this.ship.side,
+                            { v: this.ship.position.v, h: this.ship.position.h },
+                          /* by */ undefined,
+                            "other"
+                        );
+                    }
                     removePlayerFromGame(this);
                 }
             }
@@ -296,6 +307,7 @@ export class Player {
 
 
     quitGame(): void {
+        emitShipLeft(this, "logout"); // or "logout"/"timeout"/"idle"
         const idx = players.findIndex(p => p === this);
         if (idx !== -1) players.splice(idx, 1);
 

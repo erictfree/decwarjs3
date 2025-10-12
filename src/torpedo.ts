@@ -24,8 +24,10 @@ import { Blackhole } from './blackhole.js';
 import { applyShipCriticalParity } from './phaser.js';
 import { Side } from './settings.js';
 import { gameEvents } from './api/events.js';
+import { emitShipDestroyed, attackerRef } from './api/events.js';
 
-// ...
+
+
 
 type ScoringAPI = {
     addDamageToBases?(amount: number, source: Player, side: Side): void;
@@ -722,6 +724,13 @@ export function applyDamage(
 
         if (target.ship.energy <= 0 || target.ship.damage >= SHIP_FATAL_DAMAGE) {
             isDestroyed = true;
+            emitShipDestroyed(
+                target.ship.name,
+                target.ship.side,
+                { v: target.ship.position.v, h: target.ship.position.h },
+                source instanceof Player ? attackerRef(source) : undefined,
+                "combat"
+            );
             removePlayerFromGame(target);
             if (source instanceof Player && source.ship) {
                 pointsManager.addEnemiesDestroyed(1, source, source.ship.side);

@@ -11,7 +11,8 @@ import { Planet } from './planet.js';
 import { players, planets, bases, removePlayerFromGame, checkEndGame, pointsManager } from './game.js';
 import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
 import { SHIP_FATAL_DAMAGE, PLANET_PHASER_RANGE } from './game.js';
-import { gameEvents } from './api/events.js';
+import { gameEvents, attackerRef, emitShipDestroyed } from './api/events.js';
+
 
 import type { Side } from "./settings.js";
 
@@ -317,6 +318,16 @@ export function applyPhaserDamage(
 
                 (pointsManager as unknown as ScoringAPI)
                     .addDamageToEnemies?.(5000 * sign, attacker, atkSide);
+            }
+
+            if (target.ship) {
+                emitShipDestroyed(
+                    target.ship.name,
+                    target.ship.side,
+                    { v: target.ship.position.v, h: target.ship.position.h },
+                    attackerRef(attacker),
+                    "combat"
+                );
             }
 
             removePlayerFromGame(target);
@@ -827,6 +838,15 @@ export function planetPhaserDefense(triggeringPlayer: Player): void {
 
             // If the victim died, handle removal like elsewhere
             if (killed) {
+                if (p.ship) {
+                    emitShipDestroyed(
+                        p.ship.name,
+                        p.ship.side,
+                        { v: p.ship.position.v, h: p.ship.position.h },
+                        /* by */ undefined,          // planet/environment cause
+                        "planet"
+                    );
+                }
                 removePlayerFromGame(p);
             }
         }

@@ -12,6 +12,7 @@ import {
   toBaseDTO,
 } from "./api/dto.js";
 import type { Ship } from "./ship.js";
+import { emitShipLeft } from "./api/events.js";
 
 // Build the read-only provider against your live state
 const provider: GameStateProvider = {
@@ -234,10 +235,13 @@ const server = net.createServer((socket) => {
 
 
   socket.on('close', () => {
+    emitShipLeft(player, "idle"); // or "logout"/"timeout"/"idle"
     clients.delete(socket);
   });
 
   socket.on('error', (err) => {
+    emitShipLeft(player, "idle"); // or "logout"/"timeout"/"idle"
+
     console.error('Socket error:', err.message);
     clients.delete(socket);
   });

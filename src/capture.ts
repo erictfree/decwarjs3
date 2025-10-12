@@ -11,6 +11,7 @@ import { getCoordsFromCommandArgs, ocdefCoords, chebyshev } from "./coords.js";
 import { Player } from "./player.js";
 import { planets, pointsManager, players, blackholes, stars, checkEndGame } from "./game.js";
 import { applyDamage } from "./torpedo.js"; // adjust path if your applyDamage lives elsewhere
+import { gameEvents, planetRef, attackerRef } from "./api/events.js";
 
 
 //  import { starbasePhaserDefense } from "./phaser.js"; //TODO: verify this isn't a real part of classic game
@@ -127,56 +128,99 @@ export function captureCommand(player: Player, command: Command, done?: () => vo
     putClientOnHold(player, `${player.ship.name} capturing ${planet.side} planet ${coords}...`);
 
     const timer = setTimeout(() => {
-        planet.captureLock.status = false;   // Reset capture lock status
-        releaseClient(player);
+        // Always unlock + release + done, no matter what path we take
+        try {
+            // If the player left their ship during the delay, we’re done
+            if (!player.ship) return;
 
-        //const phaserDamage = 50 + (30 * buildLevel);
-        // applyPhaserShipDamage(player, { x: planet.position.x, y: planet.position.y, side: planet.side }, phaserDamage);
-        //TODO: add this back in
+            // Snapshot old state BEFORE mutating
+            const oldSide = planet.side;
+            const wasBase = !!planet.isBase;
+            const oldBuilds = planet.builds;
 
-        if (!player.ship) {
+            // Flip ownership + reset fortifications
+            planet.side = player.ship.side;
+            planet.isBase = false;
+            planet.builds = 0;
+
+            // Human-readable coords (fall back if you already computed `coords` earlier)
+            const coords =
+                typeof ocdefCoords === "function"
+                    ? ocdefCoords(player.settings.ocdef, player.ship.position, planet.position)
+                    : `(${planet.position.v},${planet.position.h})`;
+
+            // Broadcast messages
+            const othersMsg =
+                oldSide === "NEUTRAL"
+                    ? `${player.ship.name} has captured a neutral planet at ${coords}.`
+                    : `${player.ship.name} has captured a planet at ${coords} from the ${oldSide}.`;
+
+            pointsManager.addPlanetsCaptured(1, player, player.ship.side);
+            sendMessageToOthers(player, othersMsg);
+            sendOutputMessage(player, {
+                SHORT: `captured.`,
+                MEDIUM: `captured.`,
+                LONG: `captured.`,
+            });
+
+            // ---- Emit normalized events ----
+            // 1) Ownership change
+            gameEvents.emit({
+                type: "planet_captured",
+                payload: {
+                    planet: planetRef(planet),
+                    prevSide: oldSide,
+                    nextSide: planet.side,
+                    by: attackerRef(player),
+                },
+            });
+
+            // 2) If it used to be a base, announce removal
+            if (wasBase) {
+                gameEvents.emit({
+                    type: "planet_base_removed",
+                    payload: {
+                        planet: planetRef(planet),
+                        reason: "demoted",
+                        by: attackerRef(player),
+                    },
+                });
+            }
+
+            // 3) If builds were wiped, announce the delta
+            if (oldBuilds > 0) {
+                gameEvents.emit({
+                    type: "planet_builds_changed",
+                    payload: {
+                        planet: planetRef(planet),
+                        delta: -oldBuilds,
+                        newBuilds: 0,
+                        reason: "capture",
+                        by: attackerRef(player),
+                    },
+                });
+            }
+
+            // ---- Backlash damage (unchanged semantics) ----
+            const res = applyDamage(planet, player, hit, Math.random());
+
+            if (res.hita > 0) {
+                sendMessageToClient(
+                    player,
+                    `Planetary resistance hit your ship for ${Math.round(res.hita)} damage.`
+                );
+            }
+            if (res.isDestroyed) {
+                checkEndGame();
+            }
+        } finally {
+            // single place that resets the lock and releases UI
+            planet.captureLock.status = false;
+            releaseClient(player);
             done?.();
-            return;
         }
-        const oldSide = planet.side;
-        planet.builds = 0;
-        planet.isBase = false;
-        planet.side = player.ship.side;
-        planet.captureLock.status = false;
-
-        let othersMsg = `${player.ship!.name} has captured planet at ${coords}.`;
-        if (planet.side === "NEUTRAL") {
-            othersMsg = `${player.ship!.name} has captured a neutral planet at ${coords}.`;
-        } else {
-            othersMsg = `${player.ship!.name} has captured a planet at ${coords} from the ${oldSide}.`;
-        }
-
-        pointsManager.addPlanetsCaptured(1, player, player.ship!.side);
-
-        sendMessageToOthers(player, othersMsg);
-        sendOutputMessage(player, {
-            SHORT: `captured.`,
-            MEDIUM: `captured.`,
-            LONG: `captured.`,
-        });
-
-        const res = applyDamage(planet, player, hit, Math.random());
-
-        // Message only if something actually landed
-        if (res.hita > 0) {
-            sendMessageToClient(
-                player,
-                `Planetary resistance hit your ship for ${Math.round(res.hita)} damage.`
-            );
-        }
-
-        // If the capture backlash killed the player, advance endgame checks
-        if (res.isDestroyed) {
-            checkEndGame();
-        }
-
-        done?.();
     }, captureDelayMs);
+
 
     player.currentCommandTimer = timer;
 }

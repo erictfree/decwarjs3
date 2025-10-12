@@ -6,6 +6,7 @@ import { disconnectTractorWithReason } from "./tractor.js";
 import { Planet } from "./planet.js";
 import { Blackhole } from "./blackhole.js";
 import { Ship } from "./ship.js";
+import { emitShipUndocked } from "./api/events.js";
 
 // Check if a position is within the galaxy (Fortran: ingal)
 function isInGalaxy(v: number, h: number): boolean {
@@ -33,22 +34,45 @@ function getPositionType(v: number, h: number): string {
 
 // Displace a ship or base to a new position (Fortran: setdsp)
 function displaceObject(obj: Ship | Planet, newV: number, newH: number): void {
-    if (obj instanceof Ship) {
-        obj.position.v = newV;
-        obj.position.h = newH;
-        obj.condition = "RED";
-        obj.docked = false; // Fortran: docked(j) = .FALSE.
-    } else if (obj instanceof Planet) {
-        obj.position.v = newV;
-        obj.position.h = newH;
-        // If obj is a base, update its location in the bases array
-        if (obj.isBase) {
-            // Find the base in the correct base array and update its position
-            const baseArray = obj.side === "FEDERATION" ? bases.federation : bases.empire;
-            const baseIndex = baseArray.findIndex(b => b === obj);
-            if (baseIndex !== -1) {
-                baseArray[baseIndex].position.v = newV;
-                baseArray[baseIndex].position.h = newH;
+    if ("side" in obj && "devices" in obj) {
+        // Heuristic type guard for Ship; use instanceof if available:
+        // if (obj instanceof Ship) { ... }
+        const ship = obj as Ship;
+
+        const wasDockPlanet = ship.docked ? ship.dockPlanet : null;
+
+        ship.position.v = newV;
+        ship.position.h = newH;
+        ship.condition = "RED";
+
+        // If the ship was docked, nova knocks it loose → emit ship_undocked(nova)
+        if (ship.docked) {
+            ship.docked = false;
+            ship.dockPlanet = null;
+
+            // Find owning player to attribute the event and message
+            const owner = players.find((p) => p.ship === ship);
+            if (owner && wasDockPlanet) {
+                emitShipUndocked(owner, wasDockPlanet, "nova");
+                const where = wasDockPlanet.isBase
+                    ? `${wasDockPlanet.side} base ${wasDockPlanet.name}`
+                    : `planet ${wasDockPlanet.name}`;
+                sendMessageToClient(owner, `Nova shock dislodged you from ${where}.`);
+            }
+        }
+    } else {
+        // Planet path
+        const planet = obj as Planet;
+        planet.position.v = newV;
+        planet.position.h = newH;
+
+        // Keep bases array in sync if this planet is a base
+        if (planet.isBase) {
+            const arr = planet.side === "FEDERATION" ? bases.federation : bases.empire;
+            const idx = arr.findIndex((b) => b === planet);
+            if (idx !== -1) {
+                arr[idx].position.v = newV;
+                arr[idx].position.h = newH;
             }
         }
     }

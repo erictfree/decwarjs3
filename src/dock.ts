@@ -1,10 +1,19 @@
+// src/dock.ts (or wherever this lives)
 import { Command } from "./command.js";
 import { Player } from "./player.js";
 import { putClientOnHold, sendMessageToClient, releaseClient } from "./communication.js";
 import { planets } from "./game.js";
 import { statusCommand } from "./status.js";
-import { MAX_SHIP_ENERGY, MAX_SHIELD_ENERGY, MAX_TORPEDOES, DOCK_DELAY_MIN_MS, DOCK_DELAY_RANGE } from "./settings.js";
+import {
+    MAX_SHIP_ENERGY,
+    MAX_SHIELD_ENERGY,
+    MAX_TORPEDOES,
+    DOCK_DELAY_MIN_MS,
+    DOCK_DELAY_RANGE,
+} from "./settings.js";
 import { isAdjacent } from "./coords.js";
+import type { Planet } from "./planet.js";
+import { emitShipDocked } from "./api/events.js"; // ← NEW
 
 export function dockCommand(player: Player, command: Command, done?: () => void): void {
     if (!player.ship) {
@@ -20,27 +29,27 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
     }
 
     // if (player.ship.shieldsUp && player.ship.shieldEnergy > 0) {
-    //     sendMessageToClient(player, "Shields must be down to dock.");
-    //     done?.();
-    //     return;
+    //   sendMessageToClient(player, "Shields must be down to dock.");
+    //   done?.();
+    //   return;
     // }
 
     let isBase = false;
     let nearPlanet = false;
+    let dockPlanet: Planet | null = null; // ← remember where we’re docking
 
     const side = player.ship.side;
 
     for (const planet of planets) {
         if (planet.side === side && isAdjacent(player.ship.position, planet.position)) {
             nearPlanet = true;
-            if (planet.isBase) {
-                isBase = true;
-            }
+            dockPlanet = planet;              // ← capture the specific planet/base
+            if (planet.isBase) isBase = true;
             break;
         }
     }
 
-    if (!nearPlanet) {
+    if (!nearPlanet || !dockPlanet) {
         sendMessageToClient(player, "No friendly base or captured planet nearby to dock.");
         done?.();
         return;
@@ -53,7 +62,7 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
         return;
     }
 
-    const statusArgs = showStatus ? command.args.slice(1).map(a => a.toUpperCase()) : [];
+    const statusArgs = showStatus ? command.args.slice(1).map((a) => a.toUpperCase()) : [];
 
     const delayMs = DOCK_DELAY_MIN_MS + Math.random() * DOCK_DELAY_RANGE;
     putClientOnHold(player, "Docking...");
@@ -67,6 +76,13 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
             return;
         }
 
+        // Re-validate docking target still makes sense (edge-case: state changed during delay)
+        if (!dockPlanet || dockPlanet.side !== player.ship.side || !isAdjacent(player.ship.position, dockPlanet.position)) {
+            sendMessageToClient(player, "Docking aborted: target no longer available.");
+            done?.();
+            return;
+        }
+
         const ship = player.ship;
         const wasFullyRepaired =
             ship.energy >= MAX_SHIP_ENERGY &&
@@ -75,9 +91,9 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
             ship.damage <= 0;
 
         // Dock status
-        // Apply refills
         const wasAlreadyDocked = ship.docked;
         ship.docked = true;
+        ship.dockPlanet = dockPlanet;
         ship.condition = "GREEN";
 
         // Repair / refuel rates
@@ -100,8 +116,11 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
         } else {
             sendMessageToClient(player, "Docking complete. Supplies replenished.");
         }
-
         sendMessageToClient(player, "Ship condition is now GREEN.");
+
+        // 🔔 Emit ship_docked for clients/telemetry
+        // Reason "resupply" fits best here; change to "manual" if you prefer.
+        emitShipDocked(player, dockPlanet, "resupply");
 
         if (showStatus) {
             statusCommand(player, {
@@ -109,7 +128,7 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
                 args: statusArgs,
             });
         }
-        //TODO STATUS
+
         done?.();
     }, delayMs);
 

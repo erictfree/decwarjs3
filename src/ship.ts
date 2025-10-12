@@ -46,6 +46,7 @@ export class Ship {
     public isDestroyed: boolean;
     public side: Side;
     public docked: boolean;
+    public dockPlanet: Planet | null;
     public tractorPartner: Ship | null;
     public romulanStatus: {
         isRomulan: boolean;
@@ -76,6 +77,7 @@ export class Ship {
         this.shieldsUp = true;
         this.shieldEnergy = MAX_SHIELD_ENERGY;
         this.docked = false;
+        this.dockPlanet = null;
         this.name = "Unknown";
         this.isDestroyed = false;
         this.side = "NEUTRAL";
@@ -474,13 +476,3 @@ export function handleUndockForAllShipsAfterPortDestruction(destroyedPort: Plane
         }
     }
 }
-
-// // is this needed?
-
-// export function handleUndockAfterPortDestruction(ship: Ship): void {
-//     const remainingPorts = getAdjacentFriendlyPlanets(ship);
-//     if (ship.docked && remainingPorts.length <= 1) {
-//         ship.docked = false;
-//         addPendingMessage(ship.player, "Your docking port was destroyed. You are now undocked.");
-//     }
-// }
