@@ -1,12 +1,12 @@
 import { sendMessageToClient, sendMessageToOthersWithFormat } from "./communication.js";
-import { players, stars, pointsManager, removePlayerFromGame, planets, bases, checkEndGame } from "./game.js";
+import { players, stars, pointsManager, removePlayerFromGame, planets, bases, checkEndGame, blackholes } from "./game.js";
 import { Player } from "./player.js";
 import { ocdefCoords, isAdjacent } from "./coords.js";
 import { disconnectTractorWithReason } from "./tractor.js";
 import { Planet } from "./planet.js";
-import { Blackhole } from "./blackhole.js";
 import { Ship } from "./ship.js";
-import { emitShipUndocked } from "./api/events.js";
+import { emitShipUndocked, emitNovaTriggered, emitObjectDisplaced } from "./api/events.js";
+
 
 // Check if a position is within the galaxy (Fortran: ingal)
 function isInGalaxy(v: number, h: number): boolean {
@@ -16,11 +16,10 @@ function isInGalaxy(v: number, h: number): boolean {
 
 // Check if a position is empty or contains a black hole (Fortran: dispc)
 function getPositionType(v: number, h: number): string {
-    // Check for black hole (adjust based on your game's black hole representation)
-    if (planets.some(p => p.position.v === v && p.position.h === h && p instanceof Blackhole)) {
+    if (blackholes.some(bh => bh.position.v === v && bh.position.h === h)) {
         return "BLACK_HOLE";
     }
-    // Check if occupied by ship, planet, or base
+
     if (
         players.some(p => p.ship && p.ship.position.v === v && p.ship.position.h === h) ||
         planets.some(p => p.position.v === v && p.position.h === h) ||
@@ -33,54 +32,70 @@ function getPositionType(v: number, h: number): string {
 }
 
 // Displace a ship or base to a new position (Fortran: setdsp)
-function displaceObject(obj: Ship | Planet, newV: number, newH: number): void {
-    if ("side" in obj && "devices" in obj) {
-        // Heuristic type guard for Ship; use instanceof if available:
-        // if (obj instanceof Ship) { ... }
-        const ship = obj as Ship;
-
+function displaceObject(
+    obj: Ship | Planet,
+    newV: number,
+    newH: number,
+    reason: "nova" | "blackhole" | "other" = "nova"
+): void {
+    // Ship path
+    if (obj instanceof Ship) {
+        const ship = obj;
+        const from = { v: ship.position.v, h: ship.position.h };
         const wasDockPlanet = ship.docked ? ship.dockPlanet : null;
 
+        // Move ship
         ship.position.v = newV;
         ship.position.h = newH;
         ship.condition = "RED";
 
-        // If the ship was docked, nova knocks it loose → emit ship_undocked(nova)
+        // If docked, nova/blackhole knocks it loose → emit ship_undocked(reason)
         if (ship.docked) {
             ship.docked = false;
             ship.dockPlanet = null;
 
-            // Find owning player to attribute the event and message
+            // attribute event/message to the current owner of this ship, if any
             const owner = players.find((p) => p.ship === ship);
             if (owner && wasDockPlanet) {
-                emitShipUndocked(owner, wasDockPlanet, "nova");
+                emitShipUndocked(owner, wasDockPlanet, reason);
                 const where = wasDockPlanet.isBase
                     ? `${wasDockPlanet.side} base ${wasDockPlanet.name}`
                     : `planet ${wasDockPlanet.name}`;
-                sendMessageToClient(owner, `Nova shock dislodged you from ${where}.`);
+                sendMessageToClient(owner, `Shock dislodged you from ${where}.`);
             }
         }
-    } else {
-        // Planet path
-        const planet = obj as Planet;
-        planet.position.v = newV;
-        planet.position.h = newH;
 
-        // Keep bases array in sync if this planet is a base
-        if (planet.isBase) {
-            const arr = planet.side === "FEDERATION" ? bases.federation : bases.empire;
-            const idx = arr.findIndex((b) => b === planet);
-            if (idx !== -1) {
-                arr[idx].position.v = newV;
-                arr[idx].position.h = newH;
-            }
+        // Broadcast generic displacement for the ship
+        emitObjectDisplaced("ship", ship.name, from, { v: newV, h: newH }, reason);
+        return;
+    }
+
+    // Planet path
+    const planet = obj as Planet;
+    const from = { v: planet.position.v, h: planet.position.h };
+
+    planet.position.v = newV;
+    planet.position.h = newH;
+
+    // Keep bases array in sync if this planet is a base
+    if (planet.isBase) {
+        const arr = planet.side === "FEDERATION" ? bases.federation : bases.empire;
+        const idx = arr.findIndex((b) => b === planet);
+        if (idx !== -1) {
+            arr[idx].position.v = newV;
+            arr[idx].position.h = newH;
         }
     }
+
+    // Broadcast generic displacement for the planet
+    emitObjectDisplaced("planet", planet.name, from, { v: newV, h: newH }, reason);
 }
+
 
 export function triggerNovaAt(player: Player, v: number, h: number): void {
     if (!player.ship) return;
 
+    emitNovaTriggered({ v, h }, player);
     communicateNova(player, v, h);
 
     const directions = [

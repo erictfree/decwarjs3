@@ -240,7 +240,7 @@ const server = net.createServer((socket) => {
   });
 
   socket.on('error', (err) => {
-    emitShipLeft(player, "idle"); // or "logout"/"timeout"/"idle"
+    emitShipLeft(player, "timeout"); // or "logout"/"timeout"/"idle"
 
     console.error('Socket error:', err.message);
     clients.delete(socket);

@@ -25,16 +25,41 @@ export type EventType =
     | "ship_joined" // a player takes control of a ship (boards/assigns)
     | "ship_left" // a player releases a ship (logs out/docks/AFK/etc.)
     | "ship_destroyed" // a ship is actually removed from the world
-    | "ship_docked"      // ← NEW
-    | "ship_undocked";   // ← NEW
+    | "ship_docked"
+    | "ship_undocked"
+    | "nova_triggered"
+    | "object_displaced";
 
 // --- payloads ---
 export type DockReason = "manual" | "auto" | "repair" | "resupply";
-export type UndockReason = "manual" | "launch" | "forced" | "base_destroyed" | "nova";
+export type UndockReason = "manual" | "launch" | "forced" | "base_destroyed" | "nova" | "other" | "blackhole";
 
 
 export type GridCoord = { v: number; h: number };
 
+export type NovaTriggeredPayload = {
+    at: GridCoord;              // where the nova detonated
+    by?: AttackerRef;           // who caused it (torp shooter)
+};
+
+export function emitNovaTriggered(at: GridCoord, by?: Player | null) {
+    return gameEvents.emit<NovaTriggeredPayload>({
+        type: "nova_triggered",
+        payload: { at, by: attackerRef(by ?? undefined) },
+    });
+}/** Generic displacement (nova shockwave, blackhole, etc.) */
+export function emitObjectDisplaced(
+    kind: ObjectDisplacedPayload["kind"],
+    name: string | undefined,
+    from: GridCoord,
+    to: GridCoord,
+    reason: ObjectDisplacedPayload["reason"] = "nova"
+) {
+    return gameEvents.emit<ObjectDisplacedPayload>({
+        type: "object_displaced",
+        payload: { kind, name, from, to, reason },
+    });
+}
 
 export type ShipDockedPayload = {
     shipName: string;
@@ -317,3 +342,25 @@ export function emitShipUndocked(
         },
     });
 }
+
+export function triggerNovaAt(
+    source: Player | undefined,
+    v: number,
+    h: number
+): void {
+    // Tell clients a nova just started here
+    emitNovaTriggered({ v, h }, source);
+
+    // …the rest of your nova logic (shockwave, displacements, damage, etc.)…
+}
+
+
+
+
+export type ObjectDisplacedPayload = {
+    kind: "ship" | "planet" | "base";
+    name?: string; // ← make optional
+    from: GridCoord;
+    to: GridCoord;
+    reason: "nova" | "blackhole" | "other";
+};
