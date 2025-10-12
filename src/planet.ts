@@ -6,6 +6,7 @@ import { getNearbyAlliedShips } from './ship.js';
 import { addPendingMessage } from './communication.js';
 import { Player } from './player.js';
 import { players } from './game.js';
+import { emitBaseBuilt } from './api/events.js';
 
 interface CaptureLock {
     status: boolean;
@@ -41,16 +42,6 @@ export class Planet {
         this.side = side;
         this.energy = DEFAULT_BASE_ENERGY;
         baseArray.push(this);
-    }
-
-    removeBase(): void {   // total removal or just demoting?  TODO
-        if (this.isBase) {
-            const baseArray = this.side === "FEDERATION" ? bases.federation : bases.empire;
-            this.isBase = false;
-            this.side = "NEUTRAL";
-            this.energy = 0;
-            baseArray.splice(baseArray.indexOf(this), 1);
-        }
     }
 
     callForHelp(v: number, h: number, side: Side): void {

@@ -11,6 +11,8 @@ import { GRID_WIDTH, GRID_HEIGHT, WARP_DELAY_MIN_MS, WARP_DELAY_RANGE, IMPULSE_D
 import { isInBounds, getCoordsFromCommandArgs, findObjectAtPosition, ocdefCoords, isAdjacent, getTrailingPosition } from "./coords.js";
 import { Player } from "./player.js";
 import { Command } from "./command.js";
+import { gameEvents } from "./api/events.js";
+import { ShipMovedPayload } from "./api/events.js";
 
 import { disconnectTractor } from "./tractor.js";
 
@@ -159,7 +161,22 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
             sendMessageToClient(player, "Warp aborted: sector is now occupied.");
         } else {
             releaseClient(player);
+            const from = { v: ship.position.v, h: ship.position.h };
             ship.position = { v: destination.v, h: destination.h };
+            const to = { v: destination.v, h: destination.h };
+
+            // add if emitting todo
+            gameEvents.emit<ShipMovedPayload>({
+                type: "ship_moved",
+                payload: {
+                    shipName: ship.name,
+                    side: ship.side,
+                    from,
+                    to,
+                    distance: Math.max(Math.abs(to.v - from.v), Math.abs(to.h - from.h)),
+                },
+            });
+
             sendMessageToClient(player, message);
             if (ship.tractorPartner) tractorShip(ship);
         }

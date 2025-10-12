@@ -11,6 +11,7 @@ import { Planet } from './planet.js';
 import { players, planets, bases, removePlayerFromGame, checkEndGame, pointsManager } from './game.js';
 import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
 import { SHIP_FATAL_DAMAGE, PLANET_PHASER_RANGE } from './game.js';
+import { gameEvents } from './api/events.js';
 
 import type { Side } from "./settings.js";
 
@@ -342,6 +343,17 @@ export function applyPhaserDamage(
             target.energy = 0;
             handleUndockForAllShipsAfterPortDestruction(target);
             checkEndGame = true;
+            gameEvents.emit({
+                type: "planet_base_removed",
+                payload: {
+                    planet: {
+                        name: target.name,
+                        previousSide: target.side,
+                        position: { ...target.position }
+                    },
+                    reason: "collapse_phaser"
+                }
+            });
         }
     }
 

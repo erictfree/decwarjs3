@@ -1,0 +1,470 @@
+######## dto.ts
+// DTOs + pure mappers; import ONLY types from game
+import type { Side } from "../settings.js";
+import type { Player } from "../player.js";
+import type { Ship } from "../ship.js";
+import type { Planet } from "../planet.js";
+import type { Star } from "../star.js";
+import type { Blackhole } from "../blackhole.js";
+
+export type PositionDTO = Readonly<{ v: number; h: number }>;
+
+export type PlayerDTO = Readonly<{
+    name: string;
+    side: Side;
+    position: PositionDTO;
+    condition: string;
+    docked: boolean;
+    shieldsUp: boolean;
+    energy: number;
+    damage: number;
+    shieldEnergy: number;
+    torpedoes: number;
+    romulan?: Readonly<{ isRomulan: boolean; isRevealed: boolean; cloaked: boolean }>;
+}>;
+
+export type PlanetDTO = Readonly<{
+    name?: string;
+    side: Side;
+    position: PositionDTO;
+    isBase: boolean;
+    builds: number;
+    energy: number; // for bases: 0..1000 shields; for planets: whatever you store
+}>;
+
+export type BaseDTO = Readonly<{
+    side: Side;
+    position: PositionDTO;
+    energy: number; // 0..1000
+}>;
+
+export type StarDTO = Readonly<{
+    position: PositionDTO;
+}>;
+
+export type BlackholeDTO = Readonly<{
+    position: PositionDTO;
+}>;
+
+export type SummaryDTO = Readonly<{
+    timestamp: number;
+    counts: Readonly<{
+        players: number;
+        ships: number;
+        planets: number;
+        stars: number;
+        blackholes: number;
+        federationShips: number;
+        empireShips: number;
+        federationBases: number;
+        empireBases: number;
+    }>;
+}>;
+
+// ---- Mappers (pure, lint-safe) ----
+
+export function toPlayerDTO(p: Player & { ship: Ship }): Readonly<PlayerDTO> {
+    const s = p.ship;
+    return Object.freeze({
+        name: s.name,
+        side: s.side,
+        position: Object.freeze({ v: s.position.v, h: s.position.h }),
+        condition: s.condition,
+        docked: s.docked,
+        shieldsUp: s.shieldsUp,
+        energy: s.energy,
+        damage: s.damage,
+        shieldEnergy: s.shieldEnergy,
+        torpedoes: s.torpedoes,
+        romulan: s.romulanStatus
+            ? Object.freeze({
+                isRomulan: !!s.romulanStatus.isRomulan,
+                isRevealed: !!s.romulanStatus.isRevealed,
+                cloaked: !!s.romulanStatus.cloaked,
+            })
+            : undefined,
+    });
+}
+
+export function toPlanetDTO(pl: Planet): Readonly<PlanetDTO> {
+    return Object.freeze({
+        name: (pl as { name?: string }).name,
+        side: pl.side,
+        position: Object.freeze({ v: pl.position.v, h: pl.position.h }),
+        isBase: !!pl.isBase,
+        builds: pl.builds,
+        energy: pl.energy,
+    });
+}
+
+export function toBaseDTO(pl: Planet): Readonly<BaseDTO> {
+    // Caller must ensure pl.isBase === true
+    return Object.freeze({
+        side: pl.side,
+        position: Object.freeze({ v: pl.position.v, h: pl.position.h }),
+        energy: pl.energy,
+    });
+}
+
+export function toStarDTO(s: Star): Readonly<StarDTO> {
+    return Object.freeze({
+        position: Object.freeze({ v: s.position.v, h: s.position.h }),
+    });
+}
+
+export function toBlackholeDTO(b: Blackhole): Readonly<BlackholeDTO> {
+    return Object.freeze({
+        position: Object.freeze({ v: b.position.v, h: b.position.h }),
+    });
+}
+
+export function toSummaryDTO(args: {
+    players: readonly Player[];
+    planets: readonly Planet[];
+    stars: readonly Star[];
+    blackholes: readonly Blackhole[];
+    federationBases: readonly Planet[];
+    empireBases: readonly Planet[];
+}): Readonly<SummaryDTO> {
+    const { players, planets, stars, blackholes, federationBases, empireBases } = args;
+
+    const ships = players.filter((p): p is Player & { ship: Ship } => Boolean(p.ship));
+    const federationShips = ships.filter(p => p.ship.side === "FEDERATION").length;
+    const empireShips = ships.filter(p => p.ship.side === "EMPIRE").length;
+
+    return Object.freeze({
+        timestamp: Date.now(),
+        counts: Object.freeze({
+            players: players.length,
+            ships: ships.length,
+            planets: planets.length,
+            stars: stars.length,
+            blackholes: blackholes.length,
+            federationShips,
+            empireShips,
+            federationBases: federationBases.length,
+            empireBases: empireBases.length,
+        }),
+    });
+}
+
+######## events.ts
+// src/api/events.ts
+export type EventType =
+    | "ship_moved"
+    | "phaser"
+    | "torpedo"
+    | "base_destroyed"
+    | "planet_builds_changed"
+    | "planet_hit"
+    | "score_changed"
+    | (string & {}); // allow future custom types
+
+export type AnyEvent<T = unknown> = {
+    id: number;      // monotonically increasing
+    ts: number;      // epoch ms
+    type: EventType; // event name
+    payload: T;      // event payload
+};
+
+type Listener = (e: AnyEvent) => void;
+
+export class EventHub {
+    private seq = 0;
+    private listeners = new Set<Listener>();
+    private buffer: AnyEvent[] = [];
+    private readonly maxBuffer: number;
+
+    constructor(maxBuffer = 1000) {
+        this.maxBuffer = Math.max(1, maxBuffer);
+    }
+
+    /** Emit an event and fan it out to subscribers. */
+    emit<T = unknown>(evt: Omit<AnyEvent<T>, "id" | "ts">): AnyEvent<T> {
+        const e: AnyEvent<T> = {
+            id: ++this.seq,
+            ts: Date.now(),
+            type: evt.type,
+            payload: evt.payload,
+        };
+        this.buffer.push(e);
+        if (this.buffer.length > this.maxBuffer) this.buffer.shift();
+        for (const l of this.listeners) {
+            try { l(e); } catch { /* ignore listener errors */ }
+        }
+        return e;
+    }
+
+    /** Subscribe; returns an unsubscribe function. */
+    subscribe(fn: Listener): () => void {
+        this.listeners.add(fn);
+        return () => this.listeners.delete(fn);
+    }
+
+    /**
+     * Get a backlog of events newer than `sinceId`.
+     * Optionally filter by event types.
+     */
+    getSince(sinceId?: number, types?: EventType[]): AnyEvent[] {
+        let out = sinceId
+            ? this.buffer.filter(e => e.id > sinceId)
+            : [...this.buffer];
+        if (types && types.length) {
+            const set = new Set(types);
+            out = out.filter(e => set.has(e.type));
+        }
+        return out;
+    }
+
+    /** Convenience for clearing during tests. */
+    clear(): void {
+        this.buffer.length = 0;
+        this.seq = 0;
+    }
+}
+
+// Single shared hub for the whole app.
+export const gameEvents = new EventHub(2000);
+
+######## pagination.ts
+// Tiny, lint-safe pagination helper
+
+export type PageParams = Readonly<{
+    page?: number;      // 1-based
+    pageSize?: number;  // max items per page
+    maxPageSize?: number; // enforcement cap
+}>;
+
+export type PageResult<T> = Readonly<{
+    page: number;
+    pageSize: number;
+    total: number;
+    items: readonly T[];
+}>;
+
+export function paginate<T>(
+    source: readonly T[],
+    params: PageParams = {}
+): PageResult<T> {
+    const total = source.length;
+    const maxPageSize = Math.max(1, params.maxPageSize ?? 500);
+    const pageSize = Math.min(Math.max(1, params.pageSize ?? 50), maxPageSize);
+    const page = Math.max(1, params.page ?? 1);
+
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize;
+    const items = source.slice(start, end);
+
+    return { page, pageSize, total, items };
+}
+
+######## provider.ts
+// Read-only provider interface the API consumes (no game imports here)
+import type {
+    SummaryDTO,
+    PlayerDTO,
+    PlanetDTO,
+    StarDTO,
+    BlackholeDTO,
+    BaseDTO,
+} from "./dto.js";
+
+export interface GameStateProvider {
+    getSummary(): Readonly<SummaryDTO>;
+    listPlayers(): readonly Readonly<PlayerDTO>[];
+    listPlanets(): readonly Readonly<PlanetDTO>[];
+    listStars(): readonly Readonly<StarDTO>[];
+    listBlackholes(): readonly Readonly<BlackholeDTO>[];
+    listBases(): readonly Readonly<BaseDTO>[];
+}
+
+######## server.ts
+// src/api/server.ts
+import express from "express";
+import type { Request, Response } from "express";
+import cors from "cors";
+
+import type { GameStateProvider } from "./provider.js";
+import { gameEvents, type EventType } from "./events.js";
+
+/**
+ * Start the read-only API server with a provider injected from the game process.
+ * The API stays decoupled from game internals (no game imports here, only the event hub).
+ */
+export function startApiServer(provider: GameStateProvider, opts?: { port?: number }) {
+    const app = express();
+    app.use(cors());
+    app.use(express.json());
+
+    app.get("/api/health", (_req: Request, res: Response) => {
+        res.json({ ok: true });
+    });
+
+    app.get("/api/summary", (_req: Request, res: Response) => {
+        res.json(provider.getSummary());
+    });
+
+    app.get("/api/players", (_req: Request, res: Response) => {
+        res.json(provider.listPlayers());
+    });
+
+    app.get("/api/planets", (_req: Request, res: Response) => {
+        res.json(provider.listPlanets());
+    });
+
+    app.get("/api/stars", (_req: Request, res: Response) => {
+        res.json(provider.listStars());
+    });
+
+    app.get("/api/blackholes", (_req: Request, res: Response) => {
+        res.json(provider.listBlackholes());
+    });
+
+    app.get("/api/bases", (_req: Request, res: Response) => {
+        res.json(provider.listBases());
+    });
+
+    /* -------------------------
+     * LIVE EVENTS (SSE + snapshot)
+     * ------------------------- */
+
+    // GET /api/events
+    //   ?types=phaser,torpedo      (optional filter)
+    //   ?since=1234                (optional catch-up; or use Last-Event-ID)
+    app.get("/api/events", (req, res) => {
+        // SSE headers
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("Connection", "keep-alive");
+        res.flushHeaders?.();
+
+        const typeParam = (req.query.types as string | undefined) ?? "";
+        const typesArr = typeParam
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean) as EventType[];
+
+        const sinceQs = req.query.since ? Number(req.query.since) : undefined;
+        const sinceHeader = req.header("Last-Event-ID")
+            ? Number(req.header("Last-Event-ID"))
+            : undefined;
+        const since = Number.isFinite(sinceQs)
+            ? sinceQs
+            : Number.isFinite(sinceHeader)
+                ? sinceHeader
+                : undefined;
+
+        // Helper to write SSE event
+        const send = (evt: any) => {
+            res.write(`event: ${evt.type}\n`);
+            res.write(`id: ${evt.id}\n`);
+            res.write(`data: ${JSON.stringify(evt)}\n\n`);
+        };
+
+        // Initial replay (if any)
+        const replay = gameEvents.getSince(since, typesArr.length ? typesArr : undefined);
+        for (const evt of replay) send(evt);
+
+        // Subscribe to new events
+        const unsub = gameEvents.subscribe((evt) => {
+            if (typesArr.length && !typesArr.includes(evt.type)) return;
+            send(evt);
+        });
+
+        // Heartbeat
+        const heartbeat = setInterval(() => res.write(`: ping ${Date.now()}\n\n`), 15000);
+
+        // Cleanup
+        req.on("close", () => {
+            clearInterval(heartbeat);
+            unsub();
+        });
+    });
+
+    // GET /api/events/snapshot?since=123&types=a,b
+    app.get("/api/events/snapshot", (req, res) => {
+        const since = req.query.since ? Number(req.query.since) : undefined;
+
+        const typeParam = (req.query.types as string | undefined) ?? "";
+        const typesArr = typeParam
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean) as EventType[];
+
+        const events = gameEvents.getSince(
+            Number.isFinite(since) ? since : undefined,
+            typesArr.length ? typesArr : undefined
+        );
+
+        // Compute latest id from the entire buffer, not just filtered set
+        const globalLatest = gameEvents.getSince(undefined).slice(-1)[0]?.id ?? 0;
+
+        res.json({
+            latest: globalLatest,
+            count: events.length,
+            events,
+        });
+    });
+
+    const port = Number(process.env.API_PORT ?? opts?.port ?? 3001);
+    return app.listen(port, () => {
+        console.log(`[api] listening on http://localhost:${port}`);
+    });
+}
+
+######## sse.ts
+// src/api/sse.ts
+import { Router, type Request, type Response } from "express";
+import { gameEvents, type AnyEvent } from "./events.js";
+
+export const sseRouter = Router();
+
+/**
+ * GET /api/events
+ *  - Live SSE stream.
+ *  - Supports Last-Event-ID header or ?since=<id>
+ *  - Filter by ?types=phaser,torpedo,planet_captured
+ */
+sseRouter.get("/events", (req: Request, res: Response) => {
+    // CORS should be handled by your server.ts; this path only sets SSE headers
+    res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    // allow proxies to stream
+    res.flushHeaders?.();
+
+    const sinceParam = req.query.since ? Number(req.query.since) : undefined;
+    const lastIdHeader = req.header("Last-Event-ID");
+    const since = Number.isFinite(sinceParam) ? sinceParam
+        : lastIdHeader ? Number(lastIdHeader)
+            : undefined;
+
+    const typesParam = typeof req.query.types === "string" ? req.query.types : undefined;
+    const types = typesParam ? (typesParam.split(",").map(s => s.trim()).filter(Boolean) as Array<AnyEvent["type"]>) : undefined;
+
+    // 1) Send backlog (if any)
+    const backlog = gameEvents.getSince(since, types);
+    for (const e of backlog) writeEvent(res, e);
+
+    // 2) Subscribe to live events
+    const sub = gameEvents.subscribe((e) => {
+        if (types && !types.includes(e.type)) return;
+        writeEvent(res, e);
+    });
+
+    // 3) Keepalive
+    const ping = setInterval(() => { res.write(`: ping ${Date.now()}\n\n`); }, 25_000);
+
+    // 4) Cleanup
+    req.on("close", () => {
+        clearInterval(ping);
+        sub();
+    });
+});
+
+function writeEvent(res: Response, e: AnyEvent): void {
+    res.write(`id: ${e.id}\n`);
+    res.write(`event: ${String(e.type)}\n`);
+    res.write(`data: ${JSON.stringify(e)}\n\n`);
+}
+

@@ -23,6 +23,9 @@ import { Star } from './star.js';
 import { Blackhole } from './blackhole.js';
 import { applyShipCriticalParity } from './phaser.js';
 import { Side } from './settings.js';
+import { gameEvents } from './api/events.js';
+
+// ...
 
 type ScoringAPI = {
     addDamageToBases?(amount: number, source: Player, side: Side): void;
@@ -535,6 +538,9 @@ export function torpedoDamage(
 
         if (Math.random() < 0.10 || (target as Planet).energy <= 0) {
             // Base killed via collapse: award and remove
+            // (ensure you have this import somewhere near the top of the file)
+            // import { gameEvents } from "./api/events.js";
+
             if (source instanceof Player && source.ship) {
                 const atkSide = source.ship.side;
                 const tgtSide = (target as Planet).side;
@@ -544,13 +550,46 @@ export function torpedoDamage(
                 (pointsManager as unknown as ScoringAPI).addEnemiesDestroyed?.(1, source, atkSide);
             }
 
-            const arr = (target as Planet).side === "FEDERATION" ? bases.federation : bases.empire;
-            const idx = arr.indexOf(target as Planet);
-            if (idx !== -1) arr.splice(idx, 1);
-            (target as Planet).isBase = false;
-            (target as Planet).builds = 0;
-            (target as Planet).energy = 0;
-            handleUndockForAllShipsAfterPortDestruction(target as Planet);
+            // --- base removal / collapse ---
+            {
+                const base = target as Planet;
+                const prevSide = base.side; // capture before mutation
+
+                // remove from the correct team list using the captured side
+                const arr = prevSide === "FEDERATION" ? bases.federation : bases.empire;
+                const idx = arr.indexOf(base);
+                if (idx !== -1) arr.splice(idx, 1);
+
+                // mutate planet state
+                base.isBase = false;
+                base.builds = 0;
+                base.energy = 0;
+                // Fortran semantics typically keep the planet's side after base destruction.
+                // If you intend to neutralize immediately, do it explicitly:
+                // base.side = "NEUTRAL";
+
+                handleUndockForAllShipsAfterPortDestruction(base);
+
+                // emit event with correct previous side and current position
+                gameEvents.emit({
+                    type: "planet_base_removed",
+                    payload: {
+                        planet: {
+                            name: base.name,
+                            previousSide: prevSide,
+                            position: { ...base.position },
+                            energy: base.energy,
+                            builds: base.builds,
+                        },
+                        by: (source instanceof Player && source.ship)
+                            ? { shipName: source.ship.name, side: source.ship.side }
+                            : undefined,
+                        reason: "collapse_torpedo",
+                    },
+                });
+            }
+
+
 
             return {
                 hita, // pre-scale raw hit for telemetry, but base is gone
@@ -703,16 +742,41 @@ export function applyDamage(
         target.energy -= hita;
         if (target.energy < 0) target.energy = 0;
 
+
         if (target.energy <= 0) {
             isDestroyed = true;
-            const arr = target.side === "FEDERATION" ? bases.federation : bases.empire;
+
+            // capture before mutation
+            const prevSide = target.side;
+
+            const arr = prevSide === "FEDERATION" ? bases.federation : bases.empire;
             const idx = arr.indexOf(target);
             if (idx !== -1) arr.splice(idx, 1);
+
+            // mutate the planet
             target.isBase = false;
             target.energy = 0;
             target.builds = 0;
+            // NOTE: Fortran semantics usually keep side until later recapture; 
+            // if you demote to neutral immediately, do it explicitly here:
+            // target.side = "NEUTRAL";
+
             handleUndockForAllShipsAfterPortDestruction(target);
+
+            // emit with the captured previous side
+            gameEvents.emit({
+                type: "planet_base_removed",
+                payload: {
+                    planet: {
+                        name: target.name,
+                        previousSide: prevSide,               // <-- fix
+                        position: { ...target.position }
+                    },
+                    reason: "collapse_torpedo"
+                }
+            });
         }
+
 
         return {
             hita,

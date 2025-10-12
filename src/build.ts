@@ -6,6 +6,7 @@ import { putClientOnHold, releaseClient, sendOutputMessage, sendMessageToClient 
 import { bases } from "./game.js";
 import { Player } from "./player.js";
 import { Command } from "./command.js";
+import { gameEvents } from "./api/events.js";
 
 export function buildCommand(player: Player, command: Command, done?: () => void): void {
     if (command.args.length < 2) {
@@ -73,12 +74,29 @@ export function buildCommand(player: Player, command: Command, done?: () => void
         }
 
         planet.builds += 1;
+
+        gameEvents.emit({
+            type: "planet_builds_changed",
+            payload: {
+                planet: {
+                    name: planet.name,
+                    side: planet.side,
+                    position: { v: planet.position.v, h: planet.position.h },
+                    builds: planet.builds
+                },
+                by: {
+                    shipName: player.ship!.name,
+                    side: player.ship!.side
+                }
+            }
+        });
+
         if (planet.builds === 5) {
             player.points.basesBuilt += 1;
         }
         if (planet.builds === MAX_BUILDS_PER_PLANET) {
             const teamBases = player.ship.side === "FEDERATION" ? bases.federation : bases.empire;
-            if (teamBases.length >= MAX_BASES_PER_TEAM) {
+            if (teamBases.length >= MAX_BASES_PER_TEAM + 10) {  // TODO: remove the + 10
                 sendMessageToClient(player, `Maximum number of ${player.ship.side} starbases already active.`);
                 done?.();
                 return;
@@ -92,6 +110,24 @@ export function buildCommand(player: Player, command: Command, done?: () => void
                 SHORT: `Base created.`,
                 MEDIUM: `Starbase built at ${coords}.`,
                 LONG: `Planet at ${coords} has been promoted to a fully operational starbase.`,
+            });
+
+            gameEvents.emit({
+                type: "planet_base_created",
+                payload: {
+                    planet: {
+                        name: planet.name,
+                        side: planet.side,
+                        position: { v: planet.position.v, h: planet.position.h },
+                        energy: planet.energy,          // DEFAULT_BASE_ENERGY after makeBase()
+                        builds: planet.builds
+                    },
+                    by: {
+                        shipName: player.ship!.name,
+                        side: player.ship!.side
+                        // If you want, you can also include: ip: player.auth?.ip
+                    }
+                }
             });
         }
         else {
