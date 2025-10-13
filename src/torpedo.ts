@@ -12,7 +12,8 @@ import {
     MAX_TORPEDO_RANGE,
     GRID_HEIGHT,
     GRID_WIDTH,
-    CoordMode
+    CoordMode,
+    OutputSetting
 } from './settings.js';
 import { Planet } from './planet.js';
 import { isInBounds, bresenhamLine, chebyshev, ocdefCoords } from './coords.js';
@@ -47,6 +48,47 @@ type TorpedoCollision =
     | null;
 
 type Point = { v: number; h: number };
+
+// Single source of truth for torpedo hull scaling (DECWAR vibe ≈ ×0.1)
+const TORP_HULL_SCALE = 0.1;
+
+function formatTorpedoShipHit(opts: {
+    attackerInitial: string;
+    targetInitial: string;
+    atkPos: { v: number; h: number };
+    offset: string;                     // e.g. "+5,+1"
+    beforePct: number;                  // one decimal (e.g. 81.2)
+    damageUnits: number;                // one decimal
+    deflected?: boolean;
+    deflectTo?: { v: number; h: number } | null;
+    deltaPct: number;                   // one decimal, often negative
+    critDeviceName?: string;
+    output: OutputSetting;
+}): string {
+    const {
+        attackerInitial, targetInitial, atkPos, offset, beforePct,
+        damageUnits, deflected, deflectTo, deltaPct, critDeviceName, output
+    } = opts;
+
+    const sign = deltaPct >= 0 ? "+" : "";
+    const arrow = deflected && deflectTo ? ` -->${deflectTo.v}-${deflectTo.h},` : "";
+    const critTextLong = critDeviceName ? `; ${critDeviceName} dam ${Math.round(damageUnits)}` : "";
+    const critTextMed = critDeviceName ? `; ${critDeviceName} ${Math.round(damageUnits)}` : "";
+    const critTextShort = critDeviceName ? `; ${critDeviceName[0]} ${Math.round(damageUnits)}` : "";
+
+    switch (output) {
+        case "LONG":
+            // Full DECWAR-style with before% and arrow if deflected
+            return `${attackerInitial}> ${targetInitial} @${atkPos.v}-${atkPos.h} ${offset}, +${beforePct}% ${damageUnits.toFixed(1)} unit T ${targetInitial} ${arrow} ${sign}${deltaPct}%${critDeviceName ? `; ${critDeviceName} dam ${Math.round(damageUnits)}` : ""}`;
+        case "MEDIUM":
+            // Keep coords and core numbers, drop some words
+            return `${attackerInitial}> ${targetInitial} @${atkPos.v}-${atkPos.h} ${damageUnits.toFixed(1)}T ${sign}${deltaPct}%${critTextMed}`;
+        case "SHORT":
+        default:
+            // Compact: initials, damage, and shield delta
+            return `${attackerInitial}> ${targetInitial} ${Math.round(damageUnits)}T ${sign}${deltaPct}%${critTextShort}`;
+    }
+}
 
 function getPointTenStepsAway(start: Point, end: Point): Point {
     // Direction vector from start to end
@@ -308,6 +350,15 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 const energyBefore = victim.ship!.energy;
                 const damageBefore = victim.ship!.damage;
                 const shieldsBefore = victim.ship!.shieldEnergy;
+                const atk = player.ship!;
+                const vic = victim.ship!;
+                const attackerInitial = atk.name?.[0] ?? '?';
+                const targetInitial = vic.name?.[0] ?? '?';
+                const beforePct = Math.round((Math.max(0, shieldsBefore) / Math.max(1, MAX_SHIELD_ENERGY)) * 1000) / 10; // one decimal
+                const dv = vic.position.v - atk.position.v;
+                const dh = vic.position.h - atk.position.h;
+                const off = `${dh >= 0 ? "+" : ""}${dh},${dv >= 0 ? "+" : ""}${dv}`;
+
 
                 const res = torpedoDamage(player, victim);
                 fired = true;
@@ -328,9 +379,21 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                     emitShieldsChanged(victim, shieldsBefore, victim.ship.shieldEnergy);
                 }
 
-                const coords = ocdefCoords(player.settings.icdef, player.ship.position, victim.ship!.position);
-                sendMessageToClient(player, `Torpedo hit ${victim.ship!.name} @${coords} for ${Math.round(res.hita)} damage${res.critdm ? " (CRIT)" : ""}.`);
-                addPendingMessage(victim, `${player.ship!.name} hit you with a torpedo for ${Math.round(res.hita)} damage${res.critdm ? " (CRIT)" : ""}.`);
+                const afterPct = Math.round((Math.max(0, vic.shieldEnergy) / Math.max(1, MAX_SHIELD_ENERGY)) * 1000) / 10;
+                const deltaPct = Math.round((afterPct - beforePct) * 10) / 10; // likely negative
+                const dmg = Math.round((res.hita + Number.EPSILON) * 10) / 10; // one decimal
+                const atCoords = `${atk.position.v}-${atk.position.h}`;
+                const arrow = res.deflected && res.deflectTo ? ` -->${res.deflectTo.v}-${res.deflectTo.h},` : "";
+                const critText = res.critdm
+                    ? `; ${res.critDeviceName ?? "Device"} dam ${res.critdm}`
+                    : "";
+
+                // DECWAR-style line
+                const line = `${attackerInitial}> ${targetInitial} @${atCoords} ${off}, +${beforePct}% ${dmg} unit T ${targetInitial} ${arrow} ${deltaPct >= 0 ? "+" : ""}${deltaPct}%${critText}`;
+                sendMessageToClient(player, line);
+
+                // victim gets a shorter "you were hit" note (your choice)
+                addPendingMessage(victim, `${atk.name} torpedo ${dmg} on you${res.critdm ? " (CRIT)" : ""}.`);
 
                 if (res.isDestroyed) checkEndGame();
                 break;
@@ -497,14 +560,23 @@ function formatTorpedoBroadcast(player: Player, v: number, h: number): string {
     }
 }
 
-const CRIT_CHANCE = 0.20;  // TODO should this be in global?
+// (no flat crit chance; we use thresholded crits in maybeApplyShipCriticalParity)
 // Torpedo damage (TORDAM entry point) — parity-focused
 // Torpedo damage (TORDAM entry point) — parity-focused
 // --- Torpedo damage (TORDAM parity) ---------------------------------------
 export function torpedoDamage(
     source: Player | Planet,
     target: Player | Planet
-): { hita: number; isDestroyed: boolean; shieldStrength: number; shieldsUp: boolean; critdm: number } {
+): {
+    hita: number;
+    isDestroyed: boolean;
+    shieldStrength: number;
+    shieldsUp: boolean;
+    critdm: number;
+    deflected?: boolean;
+    deflectTo?: { v: number; h: number };
+    critDeviceName?: string;
+} {
     // Validate target state
     if (target instanceof Player) {
         const ship = target.ship;
@@ -529,44 +601,52 @@ export function torpedoDamage(
 
     let rawShieldEnergy = isPlayer ? target.ship!.shieldEnergy : (target as Planet).energy; // bases store 0..1000
     const rawShieldMax = isPlayer ? MAX_SHIELD_ENERGY : 1000;
-    const shieldsUp = isPlayer ? target.ship!.shieldsUp : true;
+    const shieldsUp = isPlayer ? !!target.ship!.shieldsUp : true; // bases always treated as shielded
 
     let shieldPct = toPct(rawShieldEnergy, rawShieldMax);
 
     // Base torpedo hit (Fortran TORDAM): 4000..8000
     const hit = 4000.0 + 4000.0 * Math.random();
-
-    // Deflection test
     const rana = Math.random();
-    const rand = Math.random();
-    const rand2 = rana - (shieldPct * 0.001 * rand) + 0.1;
 
-    if (rand2 <= 0.0) {
-        // Deflected: drain some shields (50 * rana on 0..1000 scale)
-        shieldPct = clamp(shieldPct - 50.0 * rana, 0, 1000);
-        rawShieldEnergy = fromPct(shieldPct, rawShieldMax);
+    // Deflection test (ONLY when shields are actually up)
+    if (shieldsUp && shieldPct > 0) {
+        const rand = Math.random();
+        const rand2 = rana - (shieldPct * 0.001 * rand) + 0.1;
 
-        if (isPlayer) {
-            target.ship!.shieldEnergy = rawShieldEnergy;
-            addPendingMessage(target, `Your ship's shields deflected a torpedo, losing ${Math.round(50.0 * rana)} shield units!`);
-        } else {
-            (target as Planet).energy = rawShieldEnergy;
+        if (rand2 <= 0.0) {
+            // Deflected: drain some shields (50 * rana on 0..1000 scale)
+            const drain = 50.0 * rana;
+            shieldPct = clamp(shieldPct - drain, 0, 1000);
+            rawShieldEnergy = fromPct(shieldPct, rawShieldMax);
+
+            if (isPlayer) {
+                target.ship!.shieldEnergy = rawShieldEnergy;
+                addPendingMessage(target, `Your ship's shields deflected a torpedo, losing ${Math.round(drain)} shield units!`);
+            } else {
+                (target as Planet).energy = rawShieldEnergy;
+            }
+
+            return {
+                hita: 0,
+                isDestroyed: false,
+                shieldStrength: rawShieldEnergy,
+                shieldsUp,
+                critdm: 0,
+                deflected: true,
+                deflectTo: isPlayer
+                    ? { v: target.ship!.position.v, h: target.ship!.position.h } // DECWAR shows the *cell the torp hops to*; we don't move it, so show victim cell
+                    : { v: (target as Planet).position.v, h: (target as Planet).position.h }
+            };
         }
-
-        return {
-            hita: 0,
-            isDestroyed: false,
-            shieldStrength: rawShieldEnergy,
-            shieldsUp,
-            critdm: 0,
-        };
     }
 
     // Damage through shields + drain
     let hita = hit;
     const prevShieldPct = shieldPct;
 
-    if (shieldPct > 0) {
+    // Absorption/drain ONLY when shields are up
+    if (shieldsUp && shieldPct > 0) {
         // Portion that penetrates
         hita = hit * (1000.0 - shieldPct) * 0.001;
 
@@ -586,7 +666,8 @@ export function torpedoDamage(
 
     // Base collapse crit/kill BEFORE hull
     let critdm = 0;
-    if (isBase && prevShieldPct > 0 && shieldPct === 0) {
+    let critDeviceName: string | undefined;
+    if (isBase && shieldsUp && prevShieldPct > 0 && shieldPct === 0) {
         const rana2 = Math.random();
         const extra = 50 + Math.floor(100 * rana2); // 50..149
         (target as Planet).energy = Math.max(0, (target as Planet).energy - extra);
@@ -677,7 +758,8 @@ export function torpedoDamage(
         if (crit.isCrit) {
             // On crit: halve + ±500 jitter already applied inside helper
             hita = crit.hita;
-            critdm = Math.max(critdm, crit.critdm);
+            const TORP_HULL_SCALE = 0.1;   // keep this single source of truth
+            critdm = Math.max(critdm, Math.round(crit.critdm * TORP_HULL_SCALE));
 
             const deviceKeys = Object.keys(victim.ship!.devices);
             const deviceName = deviceKeys[crit.critdv]?.toUpperCase?.() ?? "DEVICE";
@@ -737,7 +819,7 @@ export function torpedoDamage(
 
     // Surface crit flag and shield fields
     result.critdm = Math.max(result.critdm || 0, critdm);
-    result.shieldsUp = isPlayer ? (target.ship!.shieldsUp && target.ship!.shieldEnergy > 0) : true;
+    result.shieldsUp = isPlayer ? !!target.ship!.shieldsUp : true;
     result.shieldStrength = isPlayer ? target.ship!.shieldEnergy : (target as Planet).energy;
 
     return result;
@@ -821,7 +903,7 @@ export function applyDamage(
             hita,
             isDestroyed,
             shieldStrength: target.ship.shieldEnergy,
-            shieldsUp: target.ship.shieldsUp && target.ship.shieldEnergy > 0,
+            shieldsUp: !!target.ship.shieldsUp,
             critdm,
         };
     }
