@@ -21,7 +21,7 @@ import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
 import { triggerNovaAt } from './nova.js';
 import { Star } from './star.js';
 import { Blackhole } from './blackhole.js';
-import { applyShipCriticalParity } from './phaser.js';
+import { maybeApplyShipCriticalParity } from './phaser.js';
 import { Side } from './settings.js';
 import { gameEvents, planetRef } from './api/events.js';
 import { emitShipDestroyed, attackerRef, emitPlanetHit, emitShipHullChanged, emitShieldsChanged } from './api/events.js';
@@ -668,15 +668,30 @@ export function torpedoDamage(
         }
     }
 
-    // Ship critical (device damage) BEFORE hull
-    if (isPlayer && Math.random() < CRIT_CHANCE) {
-        const crit = applyShipCriticalParity(target as Player, hita);
-        hita = crit.hita;
-        critdm = Math.max(critdm, crit.critdm);
+    // Ship critical (device damage) BEFORE hull — thresholded, no flat chance
+    if (isPlayer) {
+        const victim = target as Player; // narrow once
 
-        const deviceKeys = Object.keys(target.ship!.devices);
-        const deviceName = deviceKeys[crit.critdv]?.toUpperCase?.() ?? "DEVICE";
-        addPendingMessage(target as Player, `CRITICAL HIT: ${deviceName} damaged by ${crit.critdm}!`);
+        const crit = maybeApplyShipCriticalParity(victim, hita);
+
+        if (crit.isCrit) {
+            // On crit: halve + ±500 jitter already applied inside helper
+            hita = crit.hita;
+            critdm = Math.max(critdm, crit.critdm);
+
+            const deviceKeys = Object.keys(victim.ship!.devices);
+            const deviceName = deviceKeys[crit.critdv]?.toUpperCase?.() ?? "DEVICE";
+
+            addPendingMessage(
+                victim,
+                crit.critdm > 0
+                    ? `CRITICAL HIT: ${deviceName} damaged by ${crit.critdm}!`
+                    : `CRITICAL HIT: ${deviceName} struck!`
+            );
+        } else {
+            // Non-crit: integer hull like the original (no global jitter)
+            hita = Math.max(0, Math.round(hita));
+        }
     }
 
     // Scale raw torp impact into hull units (~×0.1) before applying/scoring

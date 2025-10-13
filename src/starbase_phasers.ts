@@ -4,14 +4,14 @@ import { Planet } from './planet.js';
 import { bases, players } from './game.js';
 import { chebyshev } from './coords.js';
 import { phadamCore } from './phaser.js';
-import { applyShipCriticalParity } from './phaser.js';
+import { maybeApplyShipCriticalParity } from './phaser.js';
 import { applyDamage } from './torpedo.js';
 import { MAX_SHIELD_ENERGY } from './settings.js';
-import { CRIT_CHANCE } from './phaser.js';
 import { addPendingMessage } from './communication.js';
 import { Ship } from './ship.js';
 import { pointsManager } from './game.js';
 import { getRandom } from './util/random.js'; // deterministic RNG used elsewhere
+import { emitShieldsChanged } from './api/events.js';
 
 type RomulanStatus = {
     isRomulan: boolean;
@@ -19,13 +19,8 @@ type RomulanStatus = {
     cloaked: boolean;
 };
 
-
-
-// // --- BASPHA parity: enemy bases fire once per sweep ------------------
-// function isVisibleToBase(p: Player): boolean {
-//     // If you have real cloaking/visibility, use that here:
-//     return !(p.ship && (p.ship as any).isCloaked);
-// }
+// Match the phaser module’s PHADAM input scale (ships divide by 20 before core).
+const PHADAM_PHIT_DIVISOR = 20;
 
 // --- BASPHA parity: enemy bases fire once per sweep ------------------
 function isVisibleToBase(p: Player): boolean {
@@ -74,37 +69,58 @@ export function basphaFireOnce(mover: Player, numply: number): void {
         const targets = allTargets.filter(p => p.ship!.side !== base.side);
 
         for (const ship of targets) {
-            const distance = chebyshev(base.position, ship.ship!.position);
+            const s = ship.ship!;
+            if (s.romulanStatus?.cloaked) continue; // skip cloaked
+
+            const distance = chebyshev(base.position, s.position);
             if (distance > 4) continue; // Fortran: ldis(..., 4)
 
             // PHADAM (base -> ship): targetIsBase=false, shooterDamaged=false
+            const shieldsBefore = s.shieldEnergy;
+            const targetShieldsUp = Boolean(s.shieldsUp);
+
             const core = phadamCore({
                 targetIsBase: false,
-                rawShieldEnergy: ship.ship!.shieldEnergy,
+                targetShieldsUp,
+                rawShieldEnergy: s.shieldEnergy,
                 rawShieldMax: MAX_SHIELD_ENERGY,
                 distance,
                 shooterDamaged: false,
-                phit: basePhit,
+                // Feed core-scale phit (same divisor used by ship/planet phasers)
+                phit: basePhit / PHADAM_PHIT_DIVISOR,
             });
 
             let hita = core.hita;
 
-            // write back shield drain
-            ship.ship!.shieldEnergy = core.newShieldEnergy;
-
-            // Ship device crit + ±500 jitter BEFORE hull (same as players)
-            if (getRandom() < CRIT_CHANCE) {
-                const crit = applyShipCriticalParity(ship, hita);
-                hita = crit.hita;
-                const deviceKeys = Object.keys(ship.ship!.devices);
-                const deviceName = deviceKeys[crit.critdv]?.toUpperCase?.() ?? "DEVICE";
-                addPendingMessage(ship, `BASE PHASERS CRIT: ${deviceName} damaged by ${crit.critdm}!`);
+            // Write back shield drain first
+            s.shieldEnergy = core.newShieldEnergy;
+            if (shieldsBefore !== s.shieldEnergy) {
+                emitShieldsChanged(ship, shieldsBefore, s.shieldEnergy);
             }
 
-            // use current "alive" gate as pre-state to avoid double kill credit within the sweep
-            const wasAlive = ship.ship!.energy > 0;
+            // Ship device crit BEFORE hull (threshold rule; jitter only on crits)
+            if (hita > 0) {
+                const crit = maybeApplyShipCriticalParity(ship, hita);
+                if (crit.isCrit) {
+                    hita = crit.hita;
 
-            // apply hull/energy damage & destruction via shared resolver (deterministic rng)
+                    const deviceKeys = Object.keys(s.devices);
+                    const deviceName = deviceKeys[crit.critdv]?.toUpperCase?.() ?? "DEVICE";
+                    if (crit.critdm > 0) {
+                        addPendingMessage(ship, `BASE PHASERS CRIT: ${deviceName} damaged by ${crit.critdm}!`);
+                    } else {
+                        addPendingMessage(ship, `BASE PHASERS CRIT: ${deviceName} struck!`);
+                    }
+                } else {
+                    // Non-crit: round like the Fortran path (no global jitter)
+                    hita = Math.max(0, Math.round(hita));
+                }
+            }
+
+            // Use pre-state to gate kill credit during this volley
+            const wasAlive = s.energy > 0;
+
+            // Apply hull/energy via shared resolver (so you keep one place for destruction rules)
             const res = applyDamage(base, ship, hita, getRandom());
 
             // === scoring parity (credit exactly this volley) ===
@@ -114,14 +130,11 @@ export function basphaFireOnce(mover: Player, numply: number): void {
                 if (wasAlive && res.isDestroyed) {
                     pointsManager.addEnemiesDestroyed(1, /*player*/ undefined, base.side);
                 }
-            } catch {
-                // pointsManager may be absent in some builds; ignore
-            }
+            } catch { /* okay if pointsManager is not present */ }
             // ===================================================
         }
     }
 }
-
 
 function hasRomulanStatus(s: Ship): s is Ship & { romulanStatus: RomulanStatus } {
     return typeof (s as unknown as { romulanStatus?: RomulanStatus }).romulanStatus !== "undefined";

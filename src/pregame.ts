@@ -72,7 +72,7 @@ export function parseAndExecutePGCommand(player: Player, input: string): void {
 
                 if (matchedHandler) {
                     matchedHandler(player, commandObject);
-                    sendMessageToClient(player, "", false, true);
+                    // Handlers are responsible for showing prompts/messages.
                 } else {
                     sendMessageToClient(
                         player,
@@ -244,7 +244,6 @@ export function promptForLevel(player: Player, iter: number): void {
                 pl.settings.icdef = "ABSOLUTE";
                 pl.settings.output = "SHORT";
             }
-
             sendMessageToClient(pl, "Medium output format.\r\nNormal command prompt.\r\nLong SCAN format.\r\nAbsolute coordinates are default for input.\r\nBoth coordinates are default for output.\r\n");
 
             chooseSide(pl);

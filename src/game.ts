@@ -64,11 +64,15 @@ export function generateGalaxy(seed?: string): void {
     const nplnet = 60;
 
     planets = Planet.generate(nplnet);
+    console.log("generated planets");
     Planet.generateBases();  // 10 each
+    console.log("generated bases");
     Star.generate(nstar);
     if (settings.blackholes) {
+        console.log("generating blackholes");
         Blackhole.generate(nhole);
     }
+    console.log("generated stars");
     console.log(nstar, nhole, nplnet);
     settings.generated = true;
 
