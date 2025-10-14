@@ -38,6 +38,15 @@ export type EventType =
     | "base_destroyed"
     | "planet_hit"
     | "comms"
+    | "romulan_spawned"
+    | "romulan_cloak_toggled"
+    | "romulan_moved"
+    | "romulan_target_acquired"
+    | "romulan_phaser"
+    | "romulan_torpedo"
+    | "romulan_energy_changed"
+    | "romulan_destroyed"
+    | "romulan_comms"
     | "other";
 
 // --- payloads ---
@@ -698,3 +707,43 @@ export function emitCommsSent(
     };
     gameEvents.emit({ type: "comms", payload });
 }
+
+// --- Romulan payloads
+export type RomulanSpawnedPayload = { at: GridCoord; erom: number };
+export type RomulanCloakToggledPayload = { at: GridCoord; cloaked: boolean };
+export type RomulanMovedPayload = { from: GridCoord; to: GridCoord; distance: number };
+export type RomulanTargetAcquiredPayload =
+    { target: TargetRef; distance: number };
+export type RomulanWeaponPayload = {
+    from: GridCoord; to: GridCoord; distance: number; damage?: number;
+};
+export type RomulanEnergyChangedPayload = { before: number; after: number; reason: "phaser_hit" | "torpedo_hit" | "other" };
+export type RomulanDestroyedPayload = { at: GridCoord; by?: AttackerRef };
+
+// --- Romulan emit helpers
+export const emitRomulanSpawned = (at: GridCoord, erom: number) =>
+    gameEvents.emit<RomulanSpawnedPayload>({ type: "romulan_spawned", payload: { at, erom } });
+
+export const emitRomulanCloakToggled = (at: GridCoord, cloaked: boolean) =>
+    gameEvents.emit<RomulanCloakToggledPayload>({ type: "romulan_cloak_toggled", payload: { at, cloaked } });
+
+export const emitRomulanMoved = (from: GridCoord, to: GridCoord, distance: number) =>
+    gameEvents.emit<RomulanMovedPayload>({ type: "romulan_moved", payload: { from, to, distance } });
+
+export const emitRomulanTarget = (target: TargetRef, distance: number) =>
+    gameEvents.emit<RomulanTargetAcquiredPayload>({ type: "romulan_target_acquired", payload: { target, distance } });
+
+export const emitRomulanPhaser = (p: RomulanWeaponPayload) =>
+    gameEvents.emit<RomulanWeaponPayload>({ type: "romulan_phaser", payload: p });
+
+export const emitRomulanTorpedo = (p: RomulanWeaponPayload) =>
+    gameEvents.emit<RomulanWeaponPayload>({ type: "romulan_torpedo", payload: p });
+
+export const emitRomulanEnergyChanged = (before: number, after: number, reason: RomulanEnergyChangedPayload["reason"]) =>
+    gameEvents.emit<RomulanEnergyChangedPayload>({ type: "romulan_energy_changed", payload: { before, after, reason } });
+
+export const emitRomulanDestroyed = (at: GridCoord, by?: AttackerRef) =>
+    gameEvents.emit<RomulanDestroyedPayload>({ type: "romulan_destroyed", payload: { at, by } });
+
+export const emitRomulanComms = (text: string, at: GridCoord) =>
+    gameEvents.emit<{ at: GridCoord; text: string }>({ type: "romulan_comms", payload: { at, text } });

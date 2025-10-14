@@ -27,9 +27,6 @@ import { Side } from './settings.js';
 import { gameEvents, planetRef } from './api/events.js';
 import { emitShipDestroyed, attackerRef, emitPlanetHit, emitShipHullChanged, emitShieldsChanged } from './api/events.js';
 
-
-
-
 type ScoringAPI = {
     addDamageToBases?(amount: number, source: Player, side: Side): void;
     addEnemiesDestroyed?(count: number, source: Player, side: Side): void;

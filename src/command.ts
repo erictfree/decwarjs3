@@ -37,7 +37,7 @@ import { sendMessageToClient } from './communication.js';
 import { oveCommand } from './ove.js';
 import { tweakCommand } from './tweak.js';
 import { matchesPattern } from './util/util.js';
-import { processTimeConsumingMove } from './game.js';
+import { processTimeConsumingMove, nudgeTCMIdle } from './game.js';
 
 interface TokenizedInput {
     tokens: string[][];
@@ -164,14 +164,16 @@ export function processNextCommand(player: Player): void {
     if (matchedCommand.length < 3) {
         matchedCommand(player, commandObject);
         player.processingCommand = false;
+        // Light, debounced nudge so the world advances if players only use sync cmds.
+        nudgeTCMIdle(player);
         //sendAllPendingMessages()
         processNextCommand(player);
     } else {
         matchedCommand(player, commandObject, () => {
             //gameSettings.timeConsumingMoves++;  PUT BACK TODO
             player.processingCommand = false;
+            processTimeConsumingMove(player); // true "time consumed"
             processNextCommand(player);
-            processTimeConsumingMove(player);
         });
     }
 }

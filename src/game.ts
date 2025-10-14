@@ -39,6 +39,12 @@ export const pointsManager: PointsManager = new PointsManager();
 
 export const PLANET_PHASER_RANGE = 2; // Fortran pdist <= 2
 
+// ---- lightweight TCM debounce + idle fallback ---------------------------
+let __tcmRunning = false;
+let __tcmLastRun = 0;
+const __IDLE_NUDGE_MS = 2000;  // sync-command nudge at most ~once/2s
+const __MAX_IDLE_MS = 5000;  // advance at least every 5s during total lulls
+// -------------------------------------------------------------------------
 
 // mark existing player objects as bots
 // spawnAndRegisterBot("aggressor", "FEDERATION", "BOT-KIRK");
@@ -117,19 +123,31 @@ export function generateGalaxy(seed?: string): void {
 //         player.updateLifeSupport();
 //     }
 // }
-export function processTimeConsumingMove(player: Player) {
-    if (!player.ship) return;
-
-    // Team turn bookkeeping
-    if (player.ship.side === "FEDERATION") {
-        settings.teamTurns.federation += 1;
-    } else if (player.ship.side === "EMPIRE") {
-        settings.teamTurns.empire += 1;
-    } else if (player.ship.side === "ROMULAN") {
-        settings.teamTurns.romulan += 1;
+export function processTimeConsumingMove(actor?: Player, opts: { attributed?: boolean } = { attributed: true }): void {
+    // prevent overlap; keep DECWAR feel (no precise scheduling)
+    if (__tcmRunning) return;
+    __tcmRunning = true;
+    const attributed = !!opts.attributed && !!actor?.ship;
+    const ctx: Player | undefined = actor ?? players.find(pl => pl.ship);
+    if (attributed && actor?.ship) {
+        console.log("processTimeConsumingMove", actor.ship.name);
+    } else {
+        console.log("processTimeConsumingMove", "no ship");
     }
 
-    player.stardate += 1;
+    // Team turn bookkeeping (only when attributed)
+    if (attributed && actor?.ship) {
+        if (actor.ship.side === "FEDERATION") {
+            settings.teamTurns.federation += 1;
+        } else if (actor.ship.side === "EMPIRE") {
+            settings.teamTurns.empire += 1;
+        } else if (actor.ship.side === "ROMULAN") {
+            settings.teamTurns.romulan += 1;
+        }
+    }
+
+    // Stardate only advances for the attributed actor; world time always advances
+    if (attributed && actor?.ship) actor.stardate += 1;
     settings.dotime += 1;
 
     // ACTIVE human players only (exclude Romulan), never 0; fatal threshold
@@ -146,12 +164,14 @@ export function processTimeConsumingMove(player: Player) {
     // Once per full sweep of players
     if (settings.dotime >= numply) {
         settings.dotime = 0; // reset sweep
-
-        // === Defense & regen in DECWAR order ===
-        basphaFireOnce(player, numply);     // BASPHA (enemy bases fire once)
-        planetPhaserDefense(player);        // PLNATK (planet auto-phasers)
-        baseEnergyRegeneration(player);     // BASBLD (after defenses)
-        // ======================================
+        // If there is no live ship context (e.g., empty server), skip ship-scoped routines.
+        if (ctx?.ship) {
+            // === Defense & regen in DECWAR order ===
+            basphaFireOnce(ctx, numply);          // BASPHA (enemy bases fire once)
+            planetPhaserDefense(ctx);             // PLNATK (planet auto-phasers)
+            baseEnergyRegeneration(ctx);          // BASBLD (after defenses)
+            // ======================================
+        }
 
         // Romulan driver (spawn + behavior), gated at sweep boundary
         if (settings.romulans) {
@@ -171,9 +191,19 @@ export function processTimeConsumingMove(player: Player) {
 
     // Life support upkeep for everyone
     for (const p of players) p.updateLifeSupport();
+    __tcmLastRun = Date.now();
+    __tcmRunning = false;
 }
 
-
+// Debounced "idle nudge" to call from *sync* commands so the world
+// doesn't feel frozen when players spam cheap actions.
+export function nudgeTCMIdle(_player?: Player): void {
+    const now = Date.now();
+    if (__tcmRunning) return;
+    if (now - __tcmLastRun < __IDLE_NUDGE_MS) return;
+    // advance world unattributed; do not bump any ship stardate/turns
+    processTimeConsumingMove(undefined, { attributed: false });
+}
 
 function updateGame(): void {
     checkForDisconnectedPlayers();
@@ -187,6 +217,13 @@ function updateGame(): void {
     //testing remove todo
     updateBots();
     botChatterTick(); // optional flavor
+
+    // Idle fallback: advance TCM at least every 5s even if nobody does
+    // any time-consuming moves (keeps bases/planets/romulans from stalling).
+    if (!__tcmRunning && Date.now() - __tcmLastRun >= __MAX_IDLE_MS) {
+        // advance world unattributed; do not bump any ship stardate/turns
+        processTimeConsumingMove(undefined, { attributed: false });
+    }
 
     setTimeout(updateGame, 1000);
 }

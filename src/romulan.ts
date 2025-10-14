@@ -114,7 +114,11 @@ export function updateRomulan(): void {
     const now = Date.now();
     const phaReady = now >= rppausUntil;
     const torpReady = now >= rtpausUntil;
-    if (!phaReady && !torpReady) return;
+
+    if (!phaReady && !torpReady) {
+        romulanApproachTick(); // close the gap while waiting to fire
+        return;
+    }
 
     romcnt = 0; // reset cadence when firing
 
@@ -186,13 +190,13 @@ function fireRomulanPhasers(target: Target): void {
         PHA_PHIT
     );
 
-    // cooldown: rppaus = now + (active+1)*750
-    rppausUntil = Date.now() + activePlayersPlusOne() * PHA_BASE_PAUSE_MS;
-
     // message victim
     if (target.kind === "ship") {
         addPendingMessage(target.player, `Romulan phasers hit you for ${Math.round(res.hita)}!`);
     }
+
+    const pause = PHA_BASE_PAUSE_MS * activePlayersPlusOne();
+    rppausUntil = Date.now() + pause;
 }
 
 // ----- torpedo path (ROMSTR + ROMTOR parity) -----
@@ -245,10 +249,11 @@ function fireRomulanTorpedoes(target: Target): void {
         if (!nextPos) break;
 
         aim = retargetToAdjacentStar(nextPos) ?? nextPos;
-
-        // cooldown: tpaus = now + (active+1)*1000
-        rtpausUntil = Date.now() + activePlayersPlusOne() * TORP_BASE_PAUSE_MS;
     }
+
+    // cooldown: tpaus = now + (active+1)*1000
+    const pause = TORP_BASE_PAUSE_MS * activePlayersPlusOne();
+    rtpausUntil = Date.now() + pause;
 }
 
 // ROMSTR: if a star is adjacent to aim, retarget to it
@@ -890,3 +895,12 @@ function generateRomulanMessage(single: boolean): string {
 
 //     return { v, h };
 // }
+
+// Expose cooldowns in case UI/debug wants to surface them
+export function getRomulanCooldowns() {
+    const now = Date.now();
+    return {
+        phasersMs: Math.max(0, rppausUntil - now),
+        torpedoesMs: Math.max(0, rtpausUntil - now),
+    };
+}

@@ -93,7 +93,7 @@ export const settings = {
     timeConsumingMoves: 0,
     tournamentSeed: "0",
     blackholes: true,
-    romulans: false,
+    romulans: true,
     teamTurns: {
         federation: 0,
         empire: 0,
