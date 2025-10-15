@@ -5,6 +5,44 @@ import { NullSocket } from "./util/nullsocket.js";
 import { GRID_HEIGHT, GRID_WIDTH, settings } from "./settings.js";
 import { players, bases, stars, pointsManager } from "./game.js";
 import { addPendingMessage } from "./communication.js";
+import { queueCommands } from "./command.js";
+
+// Switchable speech targeting policy (set default you believe matches FORTRAN)
+type TauntPolicy = "NEAREST_ONLY" | "SINGLE_SHIP_OR_SIDE_OR_ALL" | "SIDE_PREFERENCE";
+const ROMULAN_TAUNT_POLICY: TauntPolicy = "SINGLE_SHIP_OR_SIDE_OR_ALL";
+
+function pickTellAudience(recipients: Player[]): { kind: "SHIP" | "SIDE" | "ALL"; value?: string } {
+    // Defensive
+    const r = recipients.filter(p => p.ship);
+    if (r.length === 0) return { kind: "ALL" };
+
+    switch (ROMULAN_TAUNT_POLICY) {
+        case "NEAREST_ONLY": {
+            // Always taunt the single nearest target ship (even if many are around)
+            const nearest = r.reduce((best, p) => {
+                const d = chebyshev(p.ship!.position, romulan!.ship!.position);
+                return !best || d < best.d ? { p, d } : best;
+            }, null as null | { p: Player; d: number });
+            return { kind: "SHIP", value: nearest!.p.ship!.name };
+        }
+        case "SIDE_PREFERENCE": {
+            // If any FEDs are present, taunt FED side; else if any EMPIRE present, taunt EMPIRE; else ALL
+            const hasFed = r.some(p => p.ship!.side === "FEDERATION");
+            const hasEmp = r.some(p => p.ship!.side === "EMPIRE");
+            if (hasFed && !hasEmp) return { kind: "SIDE", value: "FEDERATION" };
+            if (hasEmp && !hasFed) return { kind: "SIDE", value: "EMPIRE" };
+            if (r.length === 1) return { kind: "SHIP", value: r[0].ship!.name };
+            return { kind: "ALL" };
+        }
+        case "SINGLE_SHIP_OR_SIDE_OR_ALL":
+        default: {
+            if (r.length === 1) return { kind: "SHIP", value: r[0].ship!.name };
+            const sides = new Set(r.map(p => p.ship!.side));
+            if (sides.size === 1) return { kind: "SIDE", value: [...sides][0] };
+            return { kind: "ALL" };
+        }
+    }
+}
 import { chebyshev, bresenhamLine, findEmptyLocation, findObjectAtPosition } from "./coords.js";
 import { Planet } from "./planet.js";
 import { applyPhaserDamage } from "./phaser.js";
@@ -12,6 +50,8 @@ import { torpedoDamage } from "./torpedo.js";
 import { Ship } from "./ship.js";
 import { Star } from "./star.js";
 import { Blackhole } from "./blackhole.js";
+import { emitRomulanComms } from "./api/events.js";
+
 
 // ----- constants (FORTRAN-aligned) -----
 const KRANGE = 20;                  // search/notify/attack window
@@ -190,9 +230,15 @@ function fireRomulanPhasers(target: Target): void {
         PHA_PHIT
     );
 
-    // message victim
+    // message victim (be nice to the log if fully absorbed)
     if (target.kind === "ship") {
-        addPendingMessage(target.player, `Romulan phasers hit you for ${Math.round(res.hita)}!`);
+        const dealt = Math.round(res.hita || 0);
+        if (dealt > 0) {
+            addPendingMessage(target.player, `Romulan phasers hit you for ${dealt}!`);
+        } else {
+            // If you can access shield drain, show it; otherwise a generic absorb line:
+            addPendingMessage(target.player, `Your shields absorbed the Romulan phasers.`);
+        }
     }
 
     const pause = PHA_BASE_PAUSE_MS * activePlayersPlusOne();
@@ -384,18 +430,21 @@ export function destroyRomulan(): void {
 // ----- flavor (speech) -----
 function romulanSpeaks(): void {
     if (!romulan?.ship) return;
-
     const rh = romulan.ship.position.h;
     const rv = romulan.ship.position.v;
     const recipients = players.filter(
         p => p !== romulan && p.ship && chebyshev(p.ship.position, { v: rv, h: rh }) <= KRANGE
     );
-
-    const singleTarget = recipients.length === 1;
-    const msg = generateRomulanMessage(singleTarget);
-
-    for (const p of recipients) {
-        addPendingMessage(p, `Romulan: ${msg}`);
+    if (recipients.length === 0) return;
+    const audience = pickTellAudience(recipients);
+    const single = audience.kind === "SHIP"; // controls singular/plural phrasing
+    const msg = generateRomulanMessage(single);
+    if (audience.kind === "SHIP") {
+        queueCommands(romulan, `TELL ${audience.value}; ${msg}`);
+    } else if (audience.kind === "SIDE") {
+        queueCommands(romulan, `TELL ${audience.value}; ${msg}`);
+    } else {
+        queueCommands(romulan, `TELL ALL; ${msg}`);
     }
 }
 
@@ -423,484 +472,3 @@ function generateRomulanMessage(single: boolean): string {
 
 
 
-
-
-
-// // Romulan AI Canonical Implementation (State Machine + Fortran Fidelity)
-
-// import { Player } from './player.js';
-// import { applyDamage } from './torpedo.js';
-// import { NullSocket } from './util/nullsocket.js';
-// import {
-//     GRID_WIDTH,
-//     GRID_HEIGHT,
-//     settings,
-//     MAX_SHIELD_ENERGY,
-// } from './settings.js';
-// import {
-//     players,
-//     bases,
-//     stars,
-//     planets,
-//     pointsManager,
-// } from './game.js';
-// import { addPendingMessage, sendMessageToClient } from './communication.js';
-// import { torpedoDamage } from './torpedo.js';
-// import { bresenhamLine, chebyshev, findEmptyLocation, findObjectAtPosition } from './coords.js';
-// import { Planet } from './planet.js';
-
-// // parity helpers
-// import { phadamCore, applyShipCriticalParity } from './phaser.js';
-// // If you already export this from a central crit module, import from there instead
-// const CRIT_CHANCE = 0.20;
-
-// const TARGET_RANGE = 20;
-// const ATTACK_CHANCE = 1 / 3;
-// let romulanCounter = 0;
-// export let romulan: Player | null = null;
-
-// enum RomulanState {
-//     IDLE,
-//     SPEAK,
-//     SEARCH,
-//     MOVE,
-//     DECLOAK,
-//     PREATTACK,
-//     ATTACK,
-//     REPAIR,
-//     END
-// }
-
-// let romulanState = RomulanState.IDLE;
-
-// let romulanTarget: Target | null = null;
-
-// type Target = Planet | Player;
-
-// export function maybeSpawnRomulan(): void {
-//     if (!settings.generated) return;
-//     romulanCounter++;
-//     const numPlayers = players.length;
-
-//     if ((!romulan || !romulan.ship) && romulanCounter >= numPlayers * 3 && Math.floor(Math.random() * 5) === 4) {
-//         spawnRomulan();
-//         romulanCounter = 0;
-//     }
-// }
-
-// export function spawnRomulan(): void {
-//     if (romulan && romulan.ship) return;
-
-//     pointsManager.incrementShipsCommissioned('ROMULAN');
-
-//     romulan = new Player(new NullSocket());
-//     romulan.settings.name = 'ROMULAN';
-//     if (romulan.ship) {
-//         romulan.ship.name = 'ROMULAN';
-//         romulan.ship.side = 'ROMULAN';
-//         romulan.ship.romulanStatus = { isRomulan: true, isRevealed: false, cloaked: true };
-//         romulan.ship.energy = 5000;
-//         romulan.ship.damage = 0;
-//         romulan.ship.shieldEnergy = 0;
-
-//         const position = findEmptyLocation();
-//         if (position) {
-//             romulan.ship.position = position;
-//             players.push(romulan);
-//         }
-//     }
-// }
-
-// export function updateRomulan(): void {
-//     if (!romulan || !romulan.ship) return;
-
-//     switch (romulanState) {
-//         case RomulanState.IDLE:
-//             romulanState = RomulanState.SPEAK;
-//             break;
-
-//         case RomulanState.SPEAK:
-//             if (Math.random() < 1 / 10) romulanSpeaks();
-//             romulanState = RomulanState.SEARCH;
-//             break;
-
-//         case RomulanState.SEARCH:
-//             romulanTarget = findClosestTarget();
-//             if (romulanTarget) {
-//                 romulanState = RomulanState.MOVE;
-//             } else {
-//                 relocateRomulan();
-//                 romulanState = RomulanState.END;
-//             }
-//             break;
-
-//         case RomulanState.MOVE: {
-//             if (!romulanTarget) {
-//                 romulanState = RomulanState.END;
-//                 break;
-//             }
-
-//             const destination = romulanTarget instanceof Player
-//                 ? romulanTarget.ship?.position
-//                 : romulanTarget.position;
-
-//             if (!destination) {
-//                 romulanState = RomulanState.END;
-//                 break;
-//             }
-
-//             if (romulan && romulan.ship && !isPathClear(romulan.ship.position, destination)) {
-//                 romulanState = RomulanState.END;
-//                 break;
-//             }
-
-//             romulan.ship.position = computeRomulanMovement(romulan.ship.position, destination);
-//             romulanState = RomulanState.DECLOAK;
-//             romulan.ship.romulanStatus.cloaked = false;
-//             break;
-//         }
-
-//         case RomulanState.DECLOAK:
-//             romulanState = RomulanState.PREATTACK;
-//             break;
-
-//         case RomulanState.PREATTACK:
-//             romulanState = RomulanState.ATTACK;
-//             break;
-
-//         case RomulanState.ATTACK: {
-//             if (!romulanTarget) {
-//                 romulanState = RomulanState.END;
-//                 break;
-//             }
-
-//             let targetPos = null;
-
-//             if (romulanTarget instanceof Planet) {
-//                 targetPos = romulanTarget.position;
-//             } else if (romulanTarget instanceof Player && romulanTarget.ship) {
-//                 targetPos = romulanTarget.ship.position;
-//             }
-
-//             if (!targetPos) {
-//                 romulanState = RomulanState.END;
-//                 break;
-//             }
-
-//             const override = maybeRetargetToAdjacentStar(romulanTarget);
-//             if (override) targetPos = override;
-
-//             if (chebyshev(romulan.ship.position, targetPos) > TARGET_RANGE || Math.random() >= ATTACK_CHANCE) {
-//                 romulanState = RomulanState.REPAIR;
-//                 break;
-//             }
-
-//             // 50/50 phaser vs torpedo
-//             if (Math.random() < 0.5) {
-//                 if (romulanTarget instanceof Player) {
-//                     const targetPlayer = players.find(
-//                         p => p.ship &&
-//                             p.ship.position.h === targetPos.h &&
-//                             p.ship.position.v === targetPos.v
-//                     );
-//                     if (targetPlayer && targetPlayer.ship) {
-//                         sendMessageToClient(targetPlayer, "You are under Romulan phaser fire!");
-//                         addPendingMessage(romulan, `Romulan ship ${romulan!.ship!.name} fires phasers at ${targetPlayer.ship.name} at ${targetPlayer.ship.position.v}-${targetPlayer.ship.position.h}!`);
-
-//                         // PHADAM parity phaser attack
-//                         romulanPhaserAttack(romulan!, targetPlayer);
-//                     }
-//                 } else {
-//                     if (romulanTarget.side === 'FEDERATION' || romulanTarget.side === 'EMPIRE') {
-//                         const baseTarget = findBaseAt(romulanTarget.position, romulanTarget.side);
-//                         if (baseTarget) {
-//                             addPendingMessage(romulan, `Romulan ship ${romulan!.ship!.name} fires phasers at ${baseTarget.side} base at ${baseTarget.position.v}-${baseTarget.position.h}!`);
-//                             // PHADAM parity phaser attack against base
-//                             romulanPhaserAttack(romulan!, baseTarget);
-//                         }
-//                     }
-//                 }
-//             } else {
-//                 // Torpedo
-//                 if (romulanTarget instanceof Player) {
-//                     sendMessageToClient(romulanTarget, "A Romulan torpedo strikes!");
-//                     torpedoDamage(romulan!, romulanTarget); // ✅ correct source/target order
-//                 } else {
-//                     if (romulanTarget.side === 'FEDERATION' || romulanTarget.side === 'EMPIRE') {
-//                         const baseTarget = findBaseAt(romulanTarget!.position, romulanTarget.side);
-//                         if (baseTarget) {
-//                             torpedoDamage(romulan!, baseTarget);
-//                         }
-//                     }
-//                 }
-//             }
-
-//             // Romulan survival check (kept as-is)
-//             if (romulan.ship.energy <= 0 || romulan.ship.damage >= 10000) {
-//                 destroyRomulan();
-//                 return;
-//             }
-
-//             romulanState = RomulanState.REPAIR;
-//             break;
-//         }
-
-//         case RomulanState.REPAIR:
-//             romulan.ship.romulanStatus.cloaked = true;
-//             romulanBaseRepair();
-//             romulanState = RomulanState.IDLE;
-//             break;
-
-//         case RomulanState.END:
-//             romulanTarget = null;
-//             romulanState = RomulanState.IDLE;
-//             break;
-//     }
-// }
-
-// function findBaseAt(position: { v: number; h: number }, side: 'FEDERATION' | 'EMPIRE' | 'NEUTRAL') {
-//     const arr = side === 'FEDERATION' ? bases.federation : bases.empire;
-//     return arr.find(b => b.position.h === position.h && b.position.v === position.v);
-// }
-
-// function findClosestTarget(): Target | null {
-//     if (!romulan || !romulan.ship) return null;
-//     const romPos = romulan!.ship.position;
-//     const candidates: Target[] = [];
-
-//     // ships
-//     for (const p of players) {
-//         if (p.ship && p !== romulan && (p.ship.side === 'FEDERATION' || p.ship.side === 'EMPIRE')) {
-//             const d = chebyshev(p.ship.position, romPos);
-//             if (d <= TARGET_RANGE) candidates.push(p);
-//         }
-//     }
-
-//     // bases — fixed: actually push the base
-//     for (const side of ['FEDERATION', 'EMPIRE'] as const) {
-//         const sideBases = side === 'FEDERATION' ? bases.federation : bases.empire;
-//         for (const base of sideBases) {
-//             const d = chebyshev(base.position, romPos);
-//             if (d <= TARGET_RANGE) candidates.push(base);
-//         }
-//     }
-
-//     let closest: Target[] = [];
-//     let minDist = Infinity;
-
-//     for (const t of candidates) {
-//         const pos = t instanceof Player && t.ship ? t.ship.position : (t instanceof Planet ? t.position : undefined);
-//         if (!pos) continue;
-//         const dist = chebyshev(pos, romPos);
-//         if (dist < minDist) {
-//             closest = [t];
-//             minDist = dist;
-//         } else if (dist === minDist) {
-//             closest.push(t);
-//         }
-//     }
-
-//     return closest.length ? closest[Math.floor(Math.random() * closest.length)] : null;
-// }
-
-// function maybeRetargetToAdjacentStar(target: Target): { v: number; h: number } | null {
-//     let pos = null;
-
-//     if (target instanceof Player && target.ship) {
-//         pos = target.ship.position;
-//     } else if (target instanceof Planet) {
-//         pos = target.position;
-//     }
-//     if (!pos) return null;
-
-//     for (let dh = -1; dh <= 1; dh++) {
-//         for (let dv = -1; dv <= 1; dv++) {
-//             if (dh === 0 && dv === 0) continue;
-//             const h = pos.h + dh;
-//             const v = pos.v + dv;
-//             if (stars.some(s => s.position.h === h && s.position.v === v)) return { v, h };
-//         }
-//     }
-//     return null;
-// }
-
-// function isPathClear(from: { v: number; h: number }, to: { v: number; h: number }): boolean {
-//     if (!romulan || !romulan.ship) return false;
-
-//     const path = [...bresenhamLine(from.v, from.h, to.v, to.h)];
-//     path.shift(); // skip start
-//     path.pop();   // skip end
-
-//     for (const { v, h } of path) {
-//         if (
-//             stars.some(obj => obj.position.h === h && obj.position.v === v) ||
-//             planets.some(obj => obj.position.h === h && obj.position.v === v) ||
-//             players.some(p => p.ship && p !== romulan && p.ship.position.h === h && p.ship.position.v === v)
-//         ) return false;
-//     }
-//     return true;
-// }
-
-// export function destroyRomulan(): void { //TODO
-//     if (!romulan || !romulan.ship) return;
-//     romulan.ship.romulanStatus.cloaked = true;
-//     const idx = players.indexOf(romulan);
-//     if (idx !== -1) players.splice(idx, 1);
-//     romulan = null;
-// }
-
-// export function romulanBaseRepair(): void {
-//     if (!romulan || !romulan.ship) return;
-
-//     const numPlayers = players.filter(p => p.ship!.side === 'FEDERATION' || p.ship!.side === 'EMPIRE').length;
-//     const repairAmount = Math.floor(50 / (numPlayers + 1));
-
-//     for (const side of ['FEDERATION', 'EMPIRE'] as const) {
-//         const sideBases = side === 'FEDERATION' ? bases.federation : bases.empire;
-//         for (const base of sideBases) {
-//             if (base.energy > 0) {
-//                 base.energy = Math.min(1000, base.energy + repairAmount);
-//             }
-//         }
-//     }
-// }
-
-// function romulanSpeaks(): void {
-//     if (!romulan || !romulan.ship) return;
-
-//     const rh = romulan.ship.position.h;
-//     const rv = romulan.ship.position.v;
-//     const recipients = players.filter(p => p !== romulan && p.ship && chebyshev(p.ship.position, { v: rv, h: rh }) <= TARGET_RANGE);
-
-//     const singleTarget = recipients.length === 1;
-//     const msg = generateRomulanMessage(singleTarget);
-
-//     for (const p of recipients) {
-//         addPendingMessage(p, `Romulan: ${msg}`);
-//     }
-// }
-
-// function generateRomulanMessage(single: boolean): string {
-//     const lead = single
-//         ? ["You have aroused my wrath, ", "You will witness my vengeance, ", "May you be attacked by a slime-devil, ", "I will reduce you to quarks, "]
-//         : ["Death to ", "Destruction to ", "I will crush ", "Prepare to die, "];
-
-//     const adjectives = ["mindless ", "worthless ", "ignorant ", "idiotic ", "stupid "];
-//     const species = ["sub-Romulan ", "human ", "klingon "];
-//     const objects = ["mutant", "cretin", "toad", "worm", "parasite"];
-
-//     return `${lead[Math.floor(Math.random() * lead.length)]}${adjectives[Math.floor(Math.random() * adjectives.length)]}${single ? "" : species[Math.floor(Math.random() * species.length)]}${objects[Math.floor(Math.random() * objects.length)]}${single ? "!" : "s!"}`;
-// }
-
-// function relocateRomulan(): void {
-//     for (let i = 0; i < 100; i++) {
-//         const v = Math.floor(Math.random() * GRID_HEIGHT) + 1;
-//         const h = Math.floor(Math.random() * GRID_WIDTH) + 1;
-//         if (!findObjectAtPosition(v, h)) {
-//             if (romulan && romulan.ship) {
-//                 romulan!.ship.position = { v, h };
-//             }
-//         }
-//     }
-// }
-
-// // === PHADAM parity phaser attack for Romulan ===
-// function romulanPhaserAttack(attacker: Player, target: Player | Planet) {
-//     if (!attacker.ship) return { hita: 0, isDestroyed: false };
-
-//     const isShip = target instanceof Player && !!target.ship;
-//     const isBase = target instanceof Planet && target.isBase;
-
-//     const rawShieldEnergy = isShip ? (target as Player).ship!.shieldEnergy : (target as Planet).energy;
-//     const rawShieldMax = isShip ? MAX_SHIELD_ENERGY : 1000;
-
-//     const distance = chebyshev(
-//         attacker.ship.position,
-//         isShip ? (target as Player).ship!.position : (target as Planet).position
-//     );
-
-//     const shooterDamaged =
-//         !!attacker.ship.devices?.phaser || !!attacker.ship.devices?.computer;
-
-//     // Use standard phaser power (PHACON default 200); Romulan has no energy spend
-//     const { hita, newShieldEnergy } = phadamCore({
-//         targetIsBase: !!isBase,
-//         rawShieldEnergy,
-//         rawShieldMax,
-//         distance,
-//         shooterDamaged,
-//         phit: 200,
-//     });
-
-//     // write back shield drain
-//     if (isShip) (target as Player).ship!.shieldEnergy = newShieldEnergy;
-//     else (target as Planet).energy = newShieldEnergy;
-
-//     // ship device crit + jitter BEFORE hull
-//     let finalHit = hita;
-//     if (isShip && Math.random() < CRIT_CHANCE) {
-//         const crit = applyShipCriticalParity(target as Player, hita);
-//         finalHit = crit.hita;
-//     }
-
-//     // apply to hull using the shared resolver (keeps scoring consistent)
-//     // import from torpedo.js where your applyDamage is defined
-//     // NOTE: we import phadamCore & applyShipCriticalParity above; applyDamage is used indirectly by torpedo path.
-//     // If applyDamage is exported from another module, adjust the import path accordingly.
-
-//     return applyDamage(attacker, target, finalHit, Math.random());
-// }
-
-// // (Legacy helper kept for reference — no longer used)
-// // function romulanPhaserDamage(distance: number, romulan: Player): number {
-// //   let baseHit = Math.pow(0.9 + 0.02 * Math.random(), distance); // Fortran: pwr(0.9–0.92, id)
-// //   if (romulan.ship && (romulan.ship.devices.phaser > 0 || romulan.ship.devices.computer > 0)) {
-// //     baseHit *= 0.8; // Fortran: hit *= 0.8 if damaged
-// //   }
-// //   return baseHit;
-// // }
-
-
-// function computeRomulanMovement(
-//     from: { v: number; h: number },
-//     to: { v: number; h: number },
-//     maxSteps = 4
-// ): { v: number; h: number } {
-//     // Chebyshev distance (max axis delta)
-//     const dv = to.v - from.v;
-//     const dh = to.h - from.h;
-
-//     const dist = Math.max(Math.abs(dv), Math.abs(dh));
-//     if (dist === 0) return from;
-
-//     // never enter the target tile: stop 1 short if needed
-//     const steps = Math.min(maxSteps, Math.max(0, dist - 1));
-
-//     // move diagonally first, then along the dominant remaining axis
-//     const sv = Math.sign(dv);
-//     const sh = Math.sign(dh);
-
-//     const diag = Math.min(steps, Math.min(Math.abs(dv), Math.abs(dh))); // diagonal steps
-//     const rem = steps - diag;
-
-//     const extraV = Math.min(rem, Math.max(0, Math.abs(dv) - diag));
-//     const extraH = Math.min(rem, Math.max(0, Math.abs(dh) - diag));
-
-//     let v = from.v + sv * (diag + extraV);
-//     let h = from.h + sh * (diag + extraH);
-
-//     // clamp to galaxy bounds
-//     v = Math.max(1, Math.min(GRID_HEIGHT, v));
-//     h = Math.max(1, Math.min(GRID_WIDTH, h));
-
-//     return { v, h };
-// }
-
-// Expose cooldowns in case UI/debug wants to surface them
-export function getRomulanCooldowns() {
-    const now = Date.now();
-    return {
-        phasersMs: Math.max(0, rppausUntil - now),
-        torpedoesMs: Math.max(0, rtpausUntil - now),
-    };
-}

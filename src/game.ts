@@ -19,10 +19,7 @@ import { emitShipDestroyed, emitShipLeft } from "./api/events.js";
 
 
 // bot imports
-import { updateBots, botChatterTick } from "./bots/bot.js";
-//import { spawnAndRegisterBot } from "./bots/register.js";
-
-
+import { spawnSideBot, updateSideBots, ensureBots } from "./bots/general.js";
 
 
 export const players: Player[] = [];
@@ -82,13 +79,11 @@ export function generateGalaxy(seed?: string): void {
     console.log(nstar, nhole, nplnet);
     settings.generated = true;
 
-
-    // bot testing, TODO remove later
-
-    //  if (process.env.SPAWN_BOTS === "1") {
-    // spawnAndRegisterBot("aggressor", "FEDERATION", "BOT-KIRK");
-    // spawnAndRegisterBot("defender", "EMPIRE", "BOT-KOL");
-    //  }
+    // Optional: spawn one bot on each side for testing
+    if (process.env.SPAWN_SIDE_BOTS === "1") {
+        spawnSideBot("FEDERATION", "BOT-KIRK");
+        spawnSideBot("EMPIRE", "BOT-KOL");
+    }
 }
 
 // export function processTimeConsumingMove(player: Player) {
@@ -180,9 +175,9 @@ export function processTimeConsumingMove(actor?: Player, opts: { attributed?: bo
             maybeSpawnRomulan();     // ROMDRV spawn cadence
         }
 
-        // If bots should act once per sweep, keep these here:
-        updateBots();
-        botChatterTick();
+        // General side-playing bots (own ships; NullSocket; no relation to humans)
+        ensureBots(2);        // keep exactly two bot ships alive
+        updateSideBots();     // drive them this sweep
     } else {
         // If bots should act every time-consuming move instead, keep them here:
         // updateBots();
@@ -212,11 +207,6 @@ function updateGame(): void {
     if (settings.blackholes) {
         checkForBlackholes();
     }
-
-
-    //testing remove todo
-    updateBots();
-    botChatterTick(); // optional flavor
 
     // Idle fallback: advance TCM at least every 5s even if nobody does
     // any time-consuming moves (keeps bases/planets/romulans from stalling).

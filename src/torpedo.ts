@@ -25,7 +25,15 @@ import { Blackhole } from './blackhole.js';
 import { maybeApplyShipCriticalParity } from './phaser.js';
 import { Side } from './settings.js';
 import { gameEvents, planetRef } from './api/events.js';
-import { emitShipDestroyed, attackerRef, emitPlanetHit, emitShipHullChanged, emitShieldsChanged } from './api/events.js';
+import {
+    emitShipDestroyed,
+    attackerRef,
+    emitPlanetHit,
+    emitShipHullChanged,
+    emitShieldsChanged,
+    emitTorpedoEvent
+} from './api/events.js';
+import type { TorpedoEventPayload, GridCoord } from './api/events.js';
 
 type ScoringAPI = {
     addDamageToBases?(amount: number, source: Player, side: Side): void;
@@ -233,32 +241,66 @@ function getTargetsFromCommand(player: Player, args: string[], mode: "ABSOLUTE" 
 
     return targets;
 }
-function emitTorpedoEvent(attacker: Player, from: Point, aim: Point, coll: TorpedoCollision) {
-    if (!attacker.ship || !coll) return;
 
-    const by = { shipName: attacker.ship.name, side: attacker.ship.side };
+function toCollisionPayload(coll: TorpedoCollision): TorpedoEventPayload["collision"] {
+    if (!coll) return { kind: "none" as const };
+    switch (coll.type) {
+        case "ship":
+            return {
+                kind: "ship" as const,
+                name: coll.player.ship!.name,
+                side: coll.player.ship!.side,
+                position: { ...coll.player.ship!.position },
+            };
+        case "planet":
+            return coll.planet.isBase
+                ? { kind: "base" as const, name: coll.planet.name, side: coll.planet.side, position: { ...coll.planet.position } }
+                : { kind: "planet" as const, name: coll.planet.name, side: coll.planet.side, position: { ...coll.planet.position } };
+        case "star":
+            return { kind: "star" as const, position: { ...coll.star.position } };
+        case "blackhole":
+            return { kind: "blackhole" as const, position: { ...coll.blackhole.position } };
+        case "boundary":
+            return { kind: "boundary" as const, position: { ...coll.point } };
+        case "target":
+            return { kind: "none" as const };
+        default:
+            return { kind: "none" as const };
+    }
+}
 
-    const collision =
-        coll.type === "ship" ? { kind: "ship", name: coll.player.ship!.name, side: coll.player.ship!.side, position: { ...coll.player.ship!.position } } :
-            coll.type === "planet" ? (coll.planet.isBase
-                ? { kind: "base", name: coll.planet.name, side: coll.planet.side, position: { ...coll.planet.position } }
-                : { kind: "planet", name: coll.planet.name, side: coll.planet.side, position: { ...coll.planet.position } }) :
-                coll.type === "star" ? { kind: "star", position: { ...coll.star.position } } :
-                    coll.type === "blackhole" ? { kind: "blackhole", position: { ...coll.blackhole.position } } :
-                        coll.type === "boundary" ? { kind: "boundary", position: { ...coll.point } } :
-                            { kind: "none" };
-
-    gameEvents.emit({
-        type: "torpedo",
-        payload: {
-            by,
-            from: { v: from.v, h: from.h },
-            aim: { v: aim.v, h: aim.h },
-            collision
-            // (optional) result/damage/crit/killed/novaTriggered can be added later
-        },
+function emitBasicTorpedoEvent(
+    attacker: Player,
+    from: Point,
+    aim: Point,
+    coll: TorpedoCollision,
+    extra?: {
+        result?: TorpedoEventPayload["result"];
+        damage?: number;
+        shieldsBefore?: number;
+        shieldsAfter?: number;
+        killed?: boolean;
+        novaTriggered?: boolean;
+        crit?: { device?: string; amount?: number } | null;
+    }
+) {
+    if (!attacker.ship) return;
+    const collision = toCollisionPayload(coll);
+    emitTorpedoEvent({
+        by: { shipName: attacker.ship.name, side: attacker.ship.side },
+        from: { v: from.v, h: from.h },
+        aim: { v: aim.v, h: aim.h },
+        collision,
+        result: (extra?.result ?? "fizzled") as TorpedoEventPayload["result"],
+        damage: extra?.damage,
+        shieldsBefore: extra?.shieldsBefore,
+        shieldsAfter: extra?.shieldsAfter,
+        killed: !!extra?.killed,
+        novaTriggered: !!extra?.novaTriggered,
+        crit: extra?.crit ?? null,
     });
 }
+
 
 
 export function torpedoCommand(player: Player, command: Command, done?: () => void): void {
@@ -336,8 +378,6 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
             continue;
         }
 
-        // single authoritative telemetry event
-        emitTorpedoEvent(player, player.ship.position, target, collision);
 
         let fired = false;
         switch (collision?.type) {
@@ -358,6 +398,22 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
 
 
                 const res = torpedoDamage(player, victim);
+
+                emitBasicTorpedoEvent(
+                    player,
+                    player.ship.position,
+                    target,
+                    collision,
+                    {
+                        result: res.deflected ? "deflected" : (res.hita > 0 ? "hit" : "no_effect"),
+                        damage: res.hita,
+                        shieldsBefore,
+                        shieldsAfter: victim.ship!.shieldEnergy,
+                        killed: !!res.isDestroyed,
+                        crit: res.critdm ? { device: res.critDeviceName ?? "DEVICE", amount: res.critdm } : null
+                    }
+                );
+
                 fired = true;
 
                 // hull/energy aggregate
@@ -405,6 +461,21 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 // const energyBefore = p.energy;
 
                 const res = torpedoDamage(player, p); // will no-op on non-base planets by validation
+
+                emitBasicTorpedoEvent(
+                    player,
+                    player.ship.position,
+                    target,
+                    collision,
+                    {
+                        result: res.hita > 0 ? "hit" : "no_effect",
+                        damage: res.hita,
+                        shieldsBefore: p.isBase ? (/* before value if you cached it */ undefined) : undefined,
+                        shieldsAfter: p.isBase ? p.energy : undefined,
+                        killed: !!res.isDestroyed,
+                        crit: res.critdm ? { device: "BASE", amount: res.critdm } : null
+                    }
+                );
                 fired = true;
 
                 // emit per-impact planet/base damage event
@@ -421,28 +492,70 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 break;
             }
 
-            case "star":
-                sendMessageToClient(player, formatTorpedoExplosion(player, collision.star.position.v, collision.star.position.h));
-                if (Math.random() < 0.8) {
-                    triggerNovaAt(player, collision.star.position.v, collision.star.position.h);
+            case "star": {
+                const { v, h } = collision.star.position;
+
+                // player-facing text
+                sendMessageToClient(player, formatTorpedoExplosion(player, v, h));
+
+                // outcome: 80% nova
+                const didNova = Math.random() < 0.8;
+                if (didNova) {
+                    triggerNovaAt(player, v, h);
                 }
+
+                // authoritative torpedo event AFTER outcome is known
+                emitBasicTorpedoEvent(
+                    player,
+                    player.ship.position,  // from
+                    target,                // aim (absolute, as you already computed)
+                    collision,             // { type: "star", star: ... }
+                    {
+                        result: didNova ? "hit" : "no_effect", // "hit" = did something meaningful (nova)
+                        damage: 0,                              // star/nova doesn’t deal torp “hull” damage directly
+                        novaTriggered: didNova
+                    }
+                );
+
                 fired = true;
                 break;
+            }
 
             case "blackhole":
                 sendMessageToClient(player, formatTorpedoLostInVoid(player, collision.blackhole.position.v, collision.blackhole.position.h));
                 fired = true;
+                emitBasicTorpedoEvent(
+                    player,
+                    player.ship.position,
+                    target,
+                    collision,
+                    { result: "no_effect", damage: 0 }
+                );
                 break;
 
             case "boundary": {
                 const { v, h } = collision.point;
                 sendMessageToClient(player, `Torpedo flew off to ${ocdefCoords(player.settings.ocdef, player.ship.position, { v, h })} and detonated harmlessly.`);
                 fired = true;
+                emitBasicTorpedoEvent(
+                    player,
+                    player.ship.position,
+                    target,
+                    collision,
+                    { result: "out_of_range", damage: 0 }
+                );
                 break;
             }
 
             default:
                 sendMessageToClient(player, `Torpedo failed to reach target.`);
+                emitBasicTorpedoEvent(
+                    player,
+                    player.ship.position,
+                    target,
+                    { type: "target", point: target } as any, // benign fallback
+                    { result: "fizzled", damage: 0 }
+                );
                 fired = true;
                 break;
         }
@@ -613,13 +726,15 @@ export function torpedoDamage(
 
         if (rand2 <= 0.0) {
             // Deflected: drain some shields (50 * rana on 0..1000 scale)
-            const drain = 50.0 * rana;
+            let drain = 50.0 * rana;
+            // Round so it never prints as 0 after Math.round
+            if (drain > 0 && drain < 1) drain = 1;
             shieldPct = clamp(shieldPct - drain, 0, 1000);
             rawShieldEnergy = fromPct(shieldPct, rawShieldMax);
 
             if (isPlayer) {
                 target.ship!.shieldEnergy = rawShieldEnergy;
-                addPendingMessage(target, `Your ship's shields deflected a torpedo, losing ${Math.round(drain)} shield units!`);
+                addPendingMessage(target, `Your shields deflected a torpedo (−${Math.round(drain)} shield).`);
             } else {
                 (target as Planet).energy = rawShieldEnergy;
             }
@@ -761,10 +876,12 @@ export function torpedoDamage(
             const deviceKeys = Object.keys(victim.ship!.devices);
             const deviceName = deviceKeys[crit.critdv]?.toUpperCase?.() ?? "DEVICE";
 
+            // Show scaled device damage (same scale as hull), or omit number.
+            const scaledCrit = Math.max(0, Math.round(crit.critdm * TORP_HULL_SCALE));
             addPendingMessage(
                 victim,
-                crit.critdm > 0
-                    ? `CRITICAL HIT: ${deviceName} damaged by ${crit.critdm}!`
+                scaledCrit > 0
+                    ? `CRITICAL HIT: ${deviceName} damaged (${scaledCrit}).`
                     : `CRITICAL HIT: ${deviceName} struck!`
             );
         } else {

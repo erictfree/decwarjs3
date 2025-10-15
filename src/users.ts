@@ -16,7 +16,7 @@ export function usersCommand(requestingPlayer: Player): void {
     const formatLine = (p: Player): string => {
         const ship = (p.ship?.name ?? "???").padEnd(10, ' ');
         const captain = (p.settings.name || ship).padEnd(15, ' ');
-        const ip = (ip4Pretty(p.socket.remoteAddress || "???")).padEnd(15, ' ');
+        const ip = (ip4Pretty(p.socket.remoteAddress || "virtual")).padEnd(15, ' ');
         return `${ship} ${captain} ${ip}`;
     };
 

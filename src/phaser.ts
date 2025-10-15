@@ -36,7 +36,10 @@ function emitPhaserDebugOnce(
     attacker: Player,
     opts: { shieldsBefore: number; shieldsAfter: number; shieldMax: number; hullApplied: number; targetName: string }
 ) {
-    const pct = (x: number, max: number) => Math.round((Math.max(0, x) / Math.max(1, max)) * 100);
+    const pct = (x: number, max: number) => {
+        const raw = (Math.max(0, x) / Math.max(1, max)) * 100;
+        return Math.max(0, Math.min(100, Math.round(raw)));
+    };
     const beforePct = pct(opts.shieldsBefore, opts.shieldMax);
     const afterPct = pct(opts.shieldsAfter, opts.shieldMax);
     sendMessageToClient(attacker, `DBG shields ${beforePct}%→${afterPct}%, hull=${Math.round(opts.hullApplied)} (${opts.targetName})`);
@@ -175,6 +178,14 @@ export function applyPhaserDamage(
     const shieldPenalty = attacker.ship.shieldsUp ? 200 : 0;
     const { phit: phitUsed, energySpent } = preparePhaserShot(attacker, phit, shieldPenalty);
 
+    // If power scaled to zero, do not fire at all (prevents free shield drain in core)
+    if (phitUsed <= 0) {
+        // Keep parity-friendly wording; this avoids emitting any phaser event as well.
+        try {
+            sendMessageToClient(attacker, "No energy for phasers.");
+        } catch { /* no-op */ }
+        return { hita: 0, critdv: 0, critdm: 0, klflg: 0, checkEndGame: false };
+    }
 
     // Convert to core scale (floating; FORTRAN used reals)
     const phitForCore = Math.max(0, phitUsed / PHADAM_PHIT_DIVISOR);
@@ -247,7 +258,10 @@ export function applyPhaserDamage(
 
     const toPct1000 = (energy: number, max: number) =>
         max > 0 ? Math.max(0, Math.min(1000, (energy / max) * 1000)) : 0;
-    const pct = (x: number, max: number) => Math.round((Math.max(0, x) / Math.max(1, max)) * 100);
+    const pct = (x: number, max: number) => {
+        const raw = (Math.max(0, x) / Math.max(1, max)) * 100;
+        return Math.max(0, Math.min(100, Math.round(raw)));
+    };
 
     const prevShieldPct1000 = toPct1000(rawShieldEnergy, rawShieldMax);
     const shieldsBefore = targetIsShip ? (target as Player).ship!.shieldEnergy : (target as Planet).energy;
@@ -285,7 +299,7 @@ export function applyPhaserDamage(
 
     // Write back drained shields/energy
     if (targetIsShip) {
-        (target as Player).ship!.shieldEnergy = core.newShieldEnergy;
+        (target as Player).ship!.shieldEnergy = Math.max(0, core.newShieldEnergy);
     } else {
         (target as Planet).energy = core.newShieldEnergy;
     }
@@ -334,7 +348,7 @@ export function applyPhaserDamage(
     }
 
     // --- Ship device crit BEFORE hull (ships only)
-    if (!baseKilledNow && targetIsShip) {
+    if (!baseKilledNow && targetIsShip && hita > 0) {
         const crit = maybeApplyShipCriticalParity(target as Player, hita);
         if (crit.isCrit) {
             hita = crit.hita;
@@ -361,7 +375,8 @@ export function applyPhaserDamage(
             );
         } else {
             // Bases lose only 1% of the computed hit (DECWAR parity)
-            const delta = Math.floor(hita * 0.01);
+            // Bases lose 1% of the computed hit, with a minimum of 1 when hita > 0
+            const delta = hita > 0 ? Math.max(1, Math.floor(hita * 0.01)) : 0;
             (target as Planet).energy = Math.max(0, (target as Planet).energy - delta);
         }
     }
@@ -530,13 +545,16 @@ export function phadamCore(opts: {
     // Read shield level (0..1000 fixed-point percent)
     let shieldPct = toPct(rawShieldEnergy, rawShieldMax);
 
-    // powfac halves only when treated as shielded (strict parity)
-    let powfac = 80;
-    if (targetIsBase || targetShieldsUp) powfac = 40;
+    // “Shielded” only if a base OR shields are UP and >0%
+    const treatedAsShielded = targetIsBase || (targetShieldsUp && shieldPct > 0);
+
+    // powfac halves only when actually shielded
+    const powfac = treatedAsShielded ? 40 : 80;
 
     // distance falloff
-    const base = 0.9 + 0.02 * Math.random();
-    // const base = 0.90 + 0.05 * Math.random();
+    // const base = 0.9 + 0.02 * Math.random();
+    const base = 0.90 + 0.05 * Math.random(); // controls fall off over distance
+
     let localHita = Math.pow(base, Math.max(0, distance));
 
     // device penalty on attacker
@@ -546,7 +564,7 @@ export function phadamCore(opts: {
     // Snapshot pre-drain percent for logging; use pre-drain for penetration
     const shieldPctPre = shieldPct;
     let through = localHita;
-    if (targetIsBase || targetShieldsUp) {
+    if (treatedAsShielded) {
         // only the fraction not covered by shields goes through
         through = (1000 - shieldPct) * localHita * 0.001;
 
