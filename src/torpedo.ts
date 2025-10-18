@@ -31,9 +31,11 @@ import {
     emitPlanetHit,
     emitShipHullChanged,
     emitShieldsChanged,
-    emitTorpedoEvent
+    emitTorpedoEvent,
+    emitRomulanDestroyed
 } from './api/events.js';
 import type { TorpedoEventPayload, GridCoord } from './api/events.js';
+import { applyRomulanTorpedoHitFrom } from './romulan.js';
 
 type ScoringAPI = {
     addDamageToBases?(amount: number, source: Player, side: Side): void;
@@ -383,6 +385,34 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
         switch (collision?.type) {
             case "ship": {
                 const victim = collision.player;
+
+                // --- SPECIAL CASE: ROMULAN uses separate 'erom' (not ship.energy/damage) ---
+                if (victim.ship?.romulanStatus?.isRomulan) {
+                    const atk = player.ship!;
+                    // Capture position BEFORE any destroy-side effects
+                    const rpos = victim.ship.position ? { ...victim.ship.position } : { v: target.v, h: target.h };
+                    const { ihita, killed } = applyRomulanTorpedoHitFrom();
+                    // Visible scaling (Romulan routines are ~×10 larger internally)
+                    const shown = Math.max(1, Math.round(ihita / 10));
+
+                    // Attacker feedback + normal torpedo event for loggers/UI
+                    addPendingMessage(player, `Direct torpedo hit on ROMULAN for ${shown}!`);
+                    emitBasicTorpedoEvent(
+                        player,
+                        atk.position,
+                        target,
+                        collision,
+                        { result: "hit", damage: shown, killed }
+                    );
+
+                    if (killed) {
+                        emitRomulanDestroyed(rpos, attackerRef(player));
+                    }
+
+                    fired = true;
+                    break; // Skip normal ship damage path
+                }
+                // --- /ROMULAN SPECIAL CASE ---
 
                 const energyBefore = victim.ship!.energy;
                 const damageBefore = victim.ship!.damage;

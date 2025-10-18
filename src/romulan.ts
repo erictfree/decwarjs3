@@ -223,6 +223,14 @@ function fireRomulanPhasers(target: Target): void {
         }
     }
 
+    // Snapshot pre-state for ships so we can message correctly post-resolution.
+    let preShieldsUp = false;
+    let preShieldEnergy = 0;
+    if (target.kind === "ship" && target.player.ship) {
+        preShieldsUp = Boolean(target.player.ship.shieldsUp);
+        preShieldEnergy = target.player.ship.shieldEnergy;
+    }
+
     // fire (let phaser core handle distance/absorption)
     const res = applyPhaserDamage(
         romulan,
@@ -230,15 +238,27 @@ function fireRomulanPhasers(target: Target): void {
         PHA_PHIT
     );
 
-    // message victim (be nice to the log if fully absorbed)
+    // message victim (distinguish true absorption from no-effect/miss)
     if (target.kind === "ship") {
         const dealt = Math.round(res.hita || 0);
+        const postShieldEnergy = target.player.ship ? target.player.ship.shieldEnergy : 0;
+        const absorbed =
+            dealt === 0 &&
+            preShieldsUp === true &&
+            postShieldEnergy < preShieldEnergy; // drain actually happened
+
         if (dealt > 0) {
             addPendingMessage(target.player, `Romulan phasers hit you for ${dealt}!`);
-        } else {
-            // If you can access shield drain, show it; otherwise a generic absorb line:
+        } else if (absorbed) {
             addPendingMessage(target.player, `Your shields absorbed the Romulan phasers.`);
+        } else {
+            addPendingMessage(target.player, `Romulan phasers had no effect.`);
         }
+
+        // Optional debug to trace odd reports from the field
+        console.log(
+            `[ROM-PH] dealt=${dealt} preUp=${preShieldsUp} preSE=${preShieldEnergy} postSE=${postShieldEnergy}`
+        );
     }
 
     const pause = PHA_BASE_PAUSE_MS * activePlayersPlusOne();

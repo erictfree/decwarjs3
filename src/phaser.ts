@@ -31,19 +31,7 @@ const PHADAM_PHIT_DIVISOR = 20;
 // If your hits look globally too big/small, tweak this (1 = unchanged).
 const PHASER_HULL_SCALE: number = 1;
 
-/** Single consolidated post-resolution debug line (optional helper) */
-function emitPhaserDebugOnce(
-    attacker: Player,
-    opts: { shieldsBefore: number; shieldsAfter: number; shieldMax: number; hullApplied: number; targetName: string }
-) {
-    const pct = (x: number, max: number) => {
-        const raw = (Math.max(0, x) / Math.max(1, max)) * 100;
-        return Math.max(0, Math.min(100, Math.round(raw)));
-    };
-    const beforePct = pct(opts.shieldsBefore, opts.shieldMax);
-    const afterPct = pct(opts.shieldsAfter, opts.shieldMax);
-    sendMessageToClient(attacker, `DBG shields ${beforePct}%→${afterPct}%, hull=${Math.round(opts.hullApplied)} (${opts.targetName})`);
-}
+// (debug helper removed)
 
 export function phaserCommand(player: Player, command: Command): void {
     if (!player.ship) {
@@ -561,8 +549,7 @@ export function phadamCore(opts: {
     if (shooterDamaged) localHita *= 0.8;
 
     // --- shield penetration and drain ---
-    // Snapshot pre-drain percent for logging; use pre-drain for penetration
-    const shieldPctPre = shieldPct;
+    // use pre-drain for penetration
     let through = localHita;
     if (treatedAsShielded) {
         // only the fraction not covered by shields goes through
@@ -577,21 +564,8 @@ export function phadamCore(opts: {
     // final hull/energy damage
     const hita = Math.max(0, through * powfac * phit);
 
-    // write back shields in caller’s units
+    // write back shields in caller's units
     const newShieldEnergy = fromPct(shieldPct, rawShieldMax);
-
-    // debug snapshot
-    console.log(JSON.stringify({
-        kind: "PH_CORE",
-        distance,
-        base,                      // 0.90..0.92 drawn for this shot
-        powfac,                    // 80 shields-down, 40 if shielded/base
-        shooterDamaged,
-        phit_in: phit,             // scaled at callsite (energy / DIVISOR)
-        shieldPct_pre: shieldPctPre,  // 0..1000 before drain
-        through,                   // penetration fraction before powfac*phit
-        hita,                      // final computed hull damage
-    }));
 
     return { hita, newShieldEnergy };
 }
@@ -701,14 +675,15 @@ export function planetPhaserDefense(triggeringPlayer: Player): void {
 
     for (const planet of planets) {
         if (planet.isBase) continue; // bases handled elsewhere
-        if (planet.energy <= 0) continue; // inert planet
+        // NOTE: Non-base planets can fire even with 0 energy/builds (DECWAR-style installs).
+        // Do not early-return on energy==0.
 
         // Activation rules:
         const isNeutral = planet.side === "NEUTRAL";
         const isEnemy = planet.side !== "NEUTRAL" && planet.side !== moverSide;
 
         if (!isRomulanMove) {
-            if (!isEnemy && !isNeutral) continue;          // own side’s planets do NOT activate
+            if (!isEnemy && !isNeutral) continue;          // own side's planets do NOT activate
             if (isNeutral && Math.random() < 0.5) continue; // 50% chance to skip neutrals
         } else {
             // Romulan activates both sides; neutrals still 50%
