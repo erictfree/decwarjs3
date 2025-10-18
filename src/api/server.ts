@@ -6,6 +6,7 @@ import type { GameStateProvider } from "./provider.js";
 import { gameEvents, type EventType } from "./events.js";
 import { paginate } from "./pagination.js";
 import { sseRouter } from "./sse.js";
+import { dtoRateLimiter } from "./dtoRateLimiter.js";
 
 /**
  * Start the read-only API server with a provider injected from the game process.
@@ -13,35 +14,43 @@ import { sseRouter } from "./sse.js";
  */
 export function startApiServer(provider: GameStateProvider, opts?: { port?: number }) {
     const app = express();
+
+    // Ensure per-IP works behind proxies/load balancers
+    app.set("trust proxy", true);
+
     app.use(cors());
     app.use(express.json());
+
+    // Rate limit DTO endpoints to <= 4 requests / 5 seconds per client (with logs)
+    // Token bucket: rate = 0.8 tokens/sec, burst = 4
+    const dtoLimiter = dtoRateLimiter({ ratePerSec: 0.8, burst: 4, verbose: true });
 
     // ---- basic state endpoints ----
     app.get("/api/health", (_req: Request, res: Response) => {
         res.json({ ok: true });
     });
 
-    app.get("/api/summary", (_req: Request, res: Response) => {
+    app.get("/api/summary", dtoLimiter, (_req: Request, res: Response) => {
         res.json(provider.getSummary());
     });
 
-    app.get("/api/players", (_req: Request, res: Response) => {
+    app.get("/api/players", dtoLimiter, (_req: Request, res: Response) => {
         res.json(provider.listPlayers());
     });
 
-    app.get("/api/planets", (_req: Request, res: Response) => {
+    app.get("/api/planets", dtoLimiter, (_req: Request, res: Response) => {
         res.json(provider.listPlanets());
     });
 
-    app.get("/api/stars", (_req: Request, res: Response) => {
+    app.get("/api/stars", dtoLimiter, (_req: Request, res: Response) => {
         res.json(provider.listStars());
     });
 
-    app.get("/api/blackholes", (_req: Request, res: Response) => {
+    app.get("/api/blackholes", dtoLimiter, (_req: Request, res: Response) => {
         res.json(provider.listBlackholes());
     });
 
-    app.get("/api/bases", (_req: Request, res: Response) => {
+    app.get("/api/bases", dtoLimiter, (_req: Request, res: Response) => {
         res.json(provider.listBases());
     });
 
@@ -95,6 +104,6 @@ export function startApiServer(provider: GameStateProvider, opts?: { port?: numb
 
     const port = Number(process.env.API_PORT ?? opts?.port ?? 3001);
     return app.listen(port, () => {
-        console.log(`[api] listening on http://localhost:${port}`);
+        console.log(`[api] listening on http://localhost:${port} (DTO RL: 4 req / 5s)`);
     });
 }
