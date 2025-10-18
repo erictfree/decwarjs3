@@ -97,37 +97,19 @@ function formatTorpedoShipHit(opts: {
     }
 }
 
-function getPointTenStepsAway(start: Point, end: Point): Point {
-    // Direction vector from start to end
-    const dh = end.h - start.h; // Δh
-    const dv = end.v - start.v; // Δv
-
-    // Euclidean distance (magnitude of direction vector)
-    const magnitude = Math.sqrt(dh * dh + dv * dv);
-
-    if (magnitude === 0) {
-        // If start and end are the same, return start
-        return { v: start.v, h: start.h };
-    }
-
-    // Normalize direction vector
-    const unitH = dh / magnitude;
-    const unitV = dv / magnitude;
-
-    // Move 10 steps along the direction
-    const steps = 10;
-    let newH = start.h + unitH * steps;
-    let newV = start.v + unitV * steps;
-
-    // Round to nearest grid point (integer coordinates)
-    newH = Math.round(newH);
-    newV = Math.round(newV);
-
-    // Clamp to grid boundaries
-    newH = Math.max(1, Math.min(GRID_WIDTH, newH));
-    newV = Math.max(1, Math.min(GRID_HEIGHT, newV));
-
-    return { v: newV, h: newH };
+function clampPointWithinRange(start: Point, end: Point, maxChebyshev: number): Point {
+    // Limit travel to MAX_TORPEDO_RANGE steps in Chebyshev metric
+    const dv = end.v - start.v;
+    const dh = end.h - start.h;
+    const dist = Math.max(Math.abs(dv), Math.abs(dh));
+    if (dist <= maxChebyshev) return { v: end.v, h: end.h };
+    const scale = maxChebyshev / dist;
+    const v = Math.round(start.v + dv * scale);
+    const h = Math.round(start.h + dh * scale);
+    return {
+        v: Math.max(1, Math.min(GRID_HEIGHT, v)),
+        h: Math.max(1, Math.min(GRID_WIDTH, h)),
+    };
 }
 
 function traceTorpedoPath(player: Player, start: Point, target: Point): TorpedoCollision {
@@ -137,7 +119,7 @@ function traceTorpedoPath(player: Player, start: Point, target: Point): TorpedoC
         return null;
     }
 
-    const { v: endV, h: endH } = getPointTenStepsAway(start, target);
+    const { v: endV, h: endH } = clampPointWithinRange(start, target, MAX_TORPEDO_RANGE);
     const points = bresenhamLine(start.v, start.h, endV, endH);
     let skipFirst = true;
 
@@ -174,7 +156,7 @@ function traceTorpedoPath(player: Player, start: Point, target: Point): TorpedoC
         }
     }
 
-    // No collision, reached the grid boundary
+    // No collision, reached the travel limit/boundary
     const boundaryPoint = { v: endV, h: endH };
     // if (!isInBounds(boundaryPoint.v, boundaryPoint.h)) {
     //     throw new Error(`Boundary point ${JSON.stringify(boundaryPoint)} is outside grid boundaries`);
@@ -275,7 +257,7 @@ function emitBasicTorpedoEvent(
     attacker: Player,
     from: Point,
     aim: Point,
-    coll: TorpedoCollision,
+    coll: TorpedoCollision | null,
     extra?: {
         result?: TorpedoEventPayload["result"];
         damage?: number;
@@ -471,8 +453,19 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                     ? `; ${res.critDeviceName ?? "Device"} dam ${res.critdm}`
                     : "";
 
-                // DECWAR-style line
-                const line = `${attackerInitial}> ${targetInitial} @${atCoords} ${off}, +${beforePct}% ${dmg} unit T ${targetInitial} ${arrow} ${deltaPct >= 0 ? "+" : ""}${deltaPct}%${critText}`;
+                const line = formatTorpedoShipHit({
+                    attackerInitial,
+                    targetInitial,
+                    atkPos: atk.position,
+                    offset: off,
+                    beforePct,
+                    damageUnits: dmg,
+                    deflected: !!res.deflected,
+                    deflectTo: res.deflectTo ?? null,
+                    deltaPct,
+                    critDeviceName: res.critDeviceName,
+                    output: player.settings.output
+                });
                 sendMessageToClient(player, line);
 
                 // victim gets a shorter "you were hit" note (your choice)
@@ -486,6 +479,16 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
 
             case "planet": {
                 const p = collision.planet;
+
+                // Distress like FORTRAN when base is first struck at full shields
+                if (p.isBase && p.energy === 1000) {
+                    for (const other of players) {
+                        if (!other.ship) continue;
+                        if (other.ship.side === p.side) {
+                            addPendingMessage(other, `Starbase ${p.position.v}-${p.position.h} is under torpedo fire!`);
+                        }
+                    }
+                }
 
                 // (optional) capture before if you want it; event only needs after/damage
                 // const energyBefore = p.energy;
@@ -516,8 +519,13 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                     sendMessageToClient(player, `Torpedo ${res.hita > 0 ? `hit base @${coords} for ${Math.round(res.hita)} damage` : `was deflected @${coords}`}${res.critdm ? " (CRIT)" : ""}.`);
                     if (res.isDestroyed) checkEndGame();
                 } else {
-                    // Non-base planets are inert to torpedoes per your validation
-                    sendMessageToClient(player, `Torpedo impact on planet @${coords} had no significant effect.`);
+                    // Optional parity: nibble builds 25% of the time like your Romulan path
+                    if (Math.random() >= 0.75) {
+                        p.builds = Math.max(0, p.builds - 1);
+                        sendMessageToClient(player, `Torpedo impact on planet @${coords} disrupted infrastructure (-1 builds).`);
+                    } else {
+                        sendMessageToClient(player, `Torpedo impact on planet @${coords} had no significant effect.`);
+                    }
                 }
                 break;
             }
@@ -531,6 +539,12 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 // outcome: 80% nova
                 const didNova = Math.random() < 0.8;
                 if (didNova) {
+                    // emit event first for consistent telemetry with Romulan path
+                    const at: GridCoord = { v, h };
+                    gameEvents.emit({
+                        type: "nova_triggered",
+                        payload: { at, by: attackerRef(player) },
+                    });
                     triggerNovaAt(player, v, h);
                 }
 
@@ -583,7 +597,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                     player,
                     player.ship.position,
                     target,
-                    { type: "target", point: target } as any, // benign fallback
+                    null,
                     { result: "fizzled", damage: 0 }
                 );
                 fired = true;
@@ -655,7 +669,7 @@ function formatTorpedoOutOfRange(player: Player, v: number, h: number): string {
             return `Torpedo did not reach ${coords} `;
         case "LONG":
         default:
-            return `Torpedo launch aborted.Target at ${coords} is beyond maximum range.`;
+            return `Torpedo launch aborted. Target at ${coords} is beyond maximum range.`;
     }
 }
 function formatTorpedoLostInVoid(player: Player, v: number, h: number): string {
@@ -829,38 +843,17 @@ export function torpedoDamage(
                 (pointsManager as unknown as ScoringAPI).addEnemiesDestroyed?.(1, source, atkSide);
             }
 
-            // --- base removal / collapse ---
+            // --- base removal / collapse (single emit) ---
             {
                 const base = target as Planet;
                 const prevSide = base.side; // capture before mutation
-
-                // mutate base (isBase=false, energy=0, builds=0, undock, etc.)
-                gameEvents.emit({
-                    type: "planet_base_removed",
-                    payload: {
-                        planet: planetRef(base),
-                        by: attackerRef(source instanceof Player ? source : undefined),
-                        reason: "collapse_torpedo",
-                        previousSide: prevSide,
-                    },
-                });
-
-                // remove from the correct team list using the captured side
                 const arr = prevSide === "FEDERATION" ? bases.federation : bases.empire;
                 const idx = arr.indexOf(base);
                 if (idx !== -1) arr.splice(idx, 1);
-
-                // mutate planet state
                 base.isBase = false;
                 base.builds = 0;
                 base.energy = 0;
-                // Fortran semantics typically keep the planet's side after base destruction.
-                // If you intend to neutralize immediately, do it explicitly:
-                // base.side = "NEUTRAL";
-
                 handleUndockForAllShipsAfterPortDestruction(base);
-
-                // emit event with correct previous side and current position
                 gameEvents.emit({
                     type: "planet_base_removed",
                     payload: {
@@ -900,7 +893,6 @@ export function torpedoDamage(
         if (crit.isCrit) {
             // On crit: halve + ±500 jitter already applied inside helper
             hita = crit.hita;
-            const TORP_HULL_SCALE = 0.1;   // keep this single source of truth
             critdm = Math.max(critdm, Math.round(crit.critdm * TORP_HULL_SCALE));
 
             const deviceKeys = Object.keys(victim.ship!.devices);
@@ -921,7 +913,6 @@ export function torpedoDamage(
     }
 
     // Scale raw torp impact into hull units (~×0.1) before applying/scoring
-    const TORP_HULL_SCALE = 0.1;
     const hull = Math.max(0, Math.round(hita * TORP_HULL_SCALE));
 
     // Apply to target

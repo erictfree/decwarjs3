@@ -50,11 +50,13 @@ import { torpedoDamage } from "./torpedo.js";
 import { Ship } from "./ship.js";
 import { Star } from "./star.js";
 import { Blackhole } from "./blackhole.js";
-import { emitRomulanComms } from "./api/events.js";
+import { triggerNovaAt } from "./nova.js";
+import { emitNovaTriggered } from "./api/events.js";
+import type { GridCoord } from "./api/events.js";
 
 
 // ----- constants (FORTRAN-aligned) -----
-const KRANGE = 20;                  // search/notify/attack window
+const KRANGE = 10;                  // search/notify/attack window (FORTRAN krange=10)
 const TORP_SHOTS = 3;               // ROMTOR loop id=1..3
 const PHA_PHIT = 0.4;               // FORTRAN 200 -> 0.4 (removed 10x integer trick)
 const PHA_BASE_PAUSE_MS = 750;      // (slwest+1)*750 in FORTRAN; we scale by active players
@@ -71,6 +73,11 @@ function iran(n: number): number {
 
 type ScoringAPI = {
     incrementShipsCommissioned?(side: string): void;
+    /**
+     * FORTRAN parity: decrement star-destruction reserve when a Romulan torp
+     * successfully detonates a star into a nova. Original does: rsr(KNSDES) -= 500
+     */
+    decrementStarDestruction?(amount: number): void;
 };
 
 // ----- Romulan singleton state -----
@@ -281,16 +288,60 @@ function fireRomulanTorpedoes(target: Target): void {
     for (let shot = 1; shot <= TORP_SHOTS; shot += 1) {
         if (!aim) break;
 
-        const found = findObjectAtPosition(aim.v, aim.h);
-        const obj = found?.obj;
+        // --- FORTRAN-ish line-of-flight with small scatter/misfire ---
+        // Add a tiny jitter to emulate ROMTOR's deflection/misfire feel
+        const jv = (Math.random() - 0.5) < 0 ? 0 : 1; // ~50% nudge one step on v
+        const jh = (Math.random() - 0.5) < 0 ? 0 : 1; // ~50% nudge one step on h
+        const jittered = { v: Math.max(1, Math.min(GRID_HEIGHT, aim.v + jv)), h: Math.max(1, Math.min(GRID_WIDTH, aim.h + jh)) };
+
+        const rpos = romulan.ship.position;
+        let hit: { v: number; h: number } | null = null;
+        let obj: unknown = null;
+        for (const p of bresenhamLine(rpos.v, rpos.h, jittered.v, jittered.h)) {
+            if (p.v === rpos.v && p.h === rpos.h) continue;
+            const found = findObjectAtPosition(p.v, p.h);
+            if (found?.obj) {
+                hit = p;
+                obj = found.obj;
+                break;
+            }
+        }
+        // If nothing in the way, treat as a harmless boundary fizzle
+        if (!obj) {
+            // small miss message to help field-debug "random novas"
+            addPendingMessage(romulan, `Romulan torpedo missed (no obstruction in flight).`);
+        }
 
         if (obj instanceof Star) {
-            // Star detonation messaging (nova behavior handled elsewhere in your engine if applicable)
+            // FORTRAN ROMTOR parity:
+            // If a star is hit, 80% chance to cause a nova centered on that star,
+            // crediting the Romulan as the attacker. (snova + notifications)
             if (iran(100) <= 80) {
-                addPendingMessage(romulan, `Romulan torpedo detonated near a star at ${aim.v}-${aim.h}.`);
+                // emit event first so loggers/clients see the cause
+                const at: GridCoord = { v: hit?.v ?? aim.v, h: hit?.h ?? aim.h };
+                emitNovaTriggered(at, romulan);
+                // run nova resolution (damage, displacement, star removal, chain reactions)
+                triggerNovaAt(romulan, at.v, at.h);
+            } else {
+                // no nova: still give a small flavor message like the original did sometimes
+                const vv = hit?.v ?? aim.v, hh = hit?.h ?? aim.h;
+                addPendingMessage(romulan, `Romulan torpedo fizzles near the star at ${vv}-${hh}.`);
             }
         } else if (obj instanceof Planet) {
             if (obj.isBase) {
+                // FORTRAN ROMTOR parity:
+                // If the base is at full shields (1000), broadcast a distress call
+                if (obj.energy === 1000) {
+                    for (const p of players) {
+                        if (!p.ship) continue;
+                        if (p.ship.side === obj.side) {
+                            addPendingMessage(
+                                p,
+                                `Starbase ${obj.position.v}-${obj.position.h} is under Romulan torpedo fire!`
+                            );
+                        }
+                    }
+                }
                 torpedoDamage(romulan, obj);
             } else {
                 // accidental planet attack: 25% chance to reduce builds by 1
@@ -315,11 +366,11 @@ function fireRomulanTorpedoes(target: Target): void {
         if (!nextPos) break;
 
         aim = retargetToAdjacentStar(nextPos) ?? nextPos;
+        // --- per-shot cooldown accumulation like FORTRAN ---
+        const perShotPause = TORP_BASE_PAUSE_MS * activePlayersPlusOne();
+        rtpausUntil = Math.max(rtpausUntil, Date.now()) + perShotPause;
     }
-
-    // cooldown: tpaus = now + (active+1)*1000
-    const pause = TORP_BASE_PAUSE_MS * activePlayersPlusOne();
-    rtpausUntil = Date.now() + pause;
+    // (No extra lump-sum pause; already accumulated per shot)
 }
 
 // ROMSTR: if a star is adjacent to aim, retarget to it
