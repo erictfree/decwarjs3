@@ -35,6 +35,7 @@ export const IMPULSE_DELAY_RANGE = 2000;
 export const MAX_TORPEDO_RANGE = 10;
 export const STARBASE_PHASER_RANGE = 4;
 export const INACTIVITY_TIMEOUT = 60 * 1000 * 24 * 365;
+export const LS_CRITICAL_DAMAGE = 300;
 
 
 export type ScanSetting = "LONG" | "SHORT";

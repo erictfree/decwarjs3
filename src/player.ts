@@ -2,7 +2,7 @@ import { Socket } from 'net';
 import { Ship } from './ship.js';
 import { sendMessageToClient } from './communication.js';
 import { players, removePlayerFromGame } from './game.js';
-import { Side, ScanSetting, PromptSetting, OCDEF, ICDEF, OutputSetting, MAX_SHIELD_ENERGY } from './settings.js';
+import { Side, ScanSetting, PromptSetting, OCDEF, ICDEF, OutputSetting, MAX_SHIELD_ENERGY, LS_CRITICAL_DAMAGE } from './settings.js';
 import { AuthSession } from './util/auth.js';
 import { findEmptyLocation } from './coords.js';
 import { emitShipLeft, emitShipDestroyed } from './api/events.js';
@@ -148,7 +148,7 @@ export class Player {
             flags.push('D');
         }
 
-        if (ship.devices.lifeSupport >= 300 && ship.lifeSupportFailureTimer != null) {
+        if (ship.devices.lifeSupport >= LS_CRITICAL_DAMAGE && ship.lifeSupportFailureTimer != null) {
             flags.push(`${ship.lifeSupportFailureTimer}L`);
         }
 
@@ -195,9 +195,10 @@ export class Player {
 
     updateLifeSupport(): void {
         if (!this.ship) return;
-        const damage = this.ship.devices.lifeSupport;
+        if (this.ship.docked) return;              // parity: no drain while docked
+        const damage = this.ship.devices?.lifeSupport ?? 0;
 
-        if (damage >= 300) {
+        if (damage >= LS_CRITICAL_DAMAGE) {
             // LS is inoperative
             if (this.ship.lifeSupportFailureTimer == null) {
                 this.ship.lifeSupportFailureTimer = 60; // Start 60-stardate countdown
@@ -229,54 +230,6 @@ export class Player {
         }
     }
 
-    //     if (.not. docked(who)) shpcon(who,KLFSUP) = shpcon(who,KLFSUP) - 1	!reduce life-support reserves
-    // 	if (shpcon(who,KLFSUP) .lt. 0)  shpcon(who,KSDAM) = KENDAM	!life-support gone?
-    // 	if (prtype)  goto 3600
-    // 	call out (lifdam,0)
-    // 	call odec (shpcon(who,KLFSUP),0)
-    // 	call out (strdat,1)
-    // *	Update scoring information
-    // 3600	do 3700 i = 1, KNPOIN
-    // 	  score(i, who) = score(i, who) + tpoint(i)
-    // 	  tmscor(team,i) = tmscor(team,i) + tpoint(i)
-    // 	  tpoint(i) = 0
-    // 3700	continue
-    // 	goto 49
-    // 9999	call crlf
-    // 	call crlf
-    // 	i = iran(5)		! five fatal messages
-    // 	goto (5001, 5002, 5003, 5004, 5005), i
-    // 5001	call out ('The Romulans have devised a fiendish new',1)
-    // 	call out ('weapon!  Your ship and crew have been',1)
-    // 	call out ('reduced to quarks and now reside in the',1)
-    // 	call out ('Romulan''s energy banks!',1)
-    // 	goto 3810
-    // 5002	call out ('Your Navigation officer contracted a strange', 1)
-    // 	call out ('virus during R&R on Zzarpion III.  The Medical', 1)
-    // 	call out ('officer has been uable to diagnose it or to', 1)
-    // 	call out ('devise a cure or vaccine for it.  Your entire', 1)
-    // 	call out ('crew became infected, and all have died, including', 1)
-    // 	call out ('you.', 1)
-    // 	goto 3810
-    // 5003	call out ('Due to a design error, the Doomsday Device aboard', 1)
-    // 	call out ('your vessel has detonated.  The error, a missing', 1)
-    // 	call out ('instruction in the built-in microprocessor, will', 1)
-    // 	call out ('remain undetected for several decades.', 1)
-    // 	goto 3810
-    // 5004	call out ('An ancient Romulan space mine has exploded,', 1)
-    // 	call out ('flooding your ship with deadly radiation.', 1)
-    // 	call out ('You are forgiven, Captain, for not noticing the',1)
-    // 	call out ('mine, since it was constructed of a special', 1)
-    // 	call out ('plastic which is nearly transparant to most', 1)
-    // 	call out ('forms of radiation.  Perhaps your crew also', 1)
-    // 	call out ('forgave you as they disintegrated in a blaze', 1)
-    // 	call out ('of glory!', 1)
-    // 	goto 3810
-    // 5005	call out ('I regret to report, Captain, that your', 1)
-    // 	call out ('ship''s computer became defective, and', 1)
-    // 	call out ('consequently you have flown into a', 1)
-    // 	call out ('massive star.  The star''s gravitation has', 1)
-    // 	call out ('torn your ship apart.', 1)
 
     addToHistory(line: string): void {
         const trimmed = line.trim();
@@ -314,16 +267,6 @@ export class Player {
         this.socket?.end();
         this.socket?.destroy();
     }
-
-    // rememberEnemyBaseForTeam(base: Base) {
-    //     if (base.side === this.ship.side) return;
-    //     if (this.ship.side !== "FEDERATION" && this.ship.side !== "EMPIRE") return;
-    //     const memory = this.ship.side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
-    //     const exists = memory.bases.some(b => b.x === base.x && b.y === base.y);
-    //     if (!exists) {
-    //         memory.bases.push(base);
-    //     }
-    // }
 
     createShip(): Ship | null {
         const ship = new Ship(this);

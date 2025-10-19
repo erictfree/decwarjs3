@@ -1,5 +1,6 @@
 import { Player } from './player.js';
 import { Command } from './command.js';
+import { ran } from './util/random.js';
 import {
     OutputSetting,
     STARBASE_PHASER_RANGE,
@@ -540,8 +541,8 @@ export function phadamCore(opts: {
     const powfac = treatedAsShielded ? 40 : 80;
 
     // distance falloff
-    // const base = 0.9 + 0.02 * Math.random();
-    const base = 0.90 + 0.05 * Math.random(); // controls fall off over distance
+    // Parity with FORTRAN PHADAM: 0.90 + 0.02 * ran()
+    const base = 0.90 + 0.02 * ran(); // controls fall off over distance
 
     let localHita = Math.pow(base, Math.max(0, distance));
 

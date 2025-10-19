@@ -1,4 +1,5 @@
 import { sendMessageToClient, sendMessageToOthersWithFormat } from "./communication.js";
+import { ran } from "./util/random.js";
 import { players, stars, pointsManager, removePlayerFromGame, planets, bases, checkEndGame, blackholes } from "./game.js";
 import { Player } from "./player.js";
 import { ocdefCoords, isAdjacent } from "./coords.js";
@@ -110,7 +111,7 @@ export function triggerNovaAt(player: Player, v: number, h: number): void {
         if (!other.ship) continue;
 
         if (isAdjacent(other.ship.position, { v, h })) {
-            const damage = 1000 + Math.random() * 2000;
+            const damage = 1000 + ran() * 2000;
             applyNovaDamageShip(player, other, damage, v, h);
 
             // Find tractoring player (if any)

@@ -1,5 +1,6 @@
 // romulan.ts — FORTRAN-parity Romulan (ROMDRV/ROMTOR/ROMSTR/PHAROM/TOROM/DEADRO)
 
+import { ran, iran } from './util/random.js';
 import { Player } from "./player.js";
 import { NullSocket } from "./util/nullsocket.js";
 import { GRID_HEIGHT, GRID_WIDTH, settings } from "./settings.js";
@@ -66,10 +67,6 @@ const TORP_BASE_PAUSE_MS = 1000;    // (slwest+1)*1000 in FORTRAN
 const activePlayersPlusOne = () =>
     Math.max(1, players.filter(p => p.ship && p.ship.energy > 0).length + 1);
 
-function iran(n: number): number {
-    // 1..n inclusive (FORTRAN-like)
-    return Math.floor(Math.random() * n) + 1;
-}
 
 type ScoringAPI = {
     incrementShipsCommissioned?(side: string): void;
@@ -290,8 +287,8 @@ function fireRomulanTorpedoes(target: Target): void {
 
         // --- FORTRAN-ish line-of-flight with small scatter/misfire ---
         // Add a tiny jitter to emulate ROMTOR's deflection/misfire feel
-        const jv = (Math.random() - 0.5) < 0 ? 0 : 1; // ~50% nudge one step on v
-        const jh = (Math.random() - 0.5) < 0 ? 0 : 1; // ~50% nudge one step on h
+        const jv = (ran() - 0.5) < 0 ? 0 : 1; // ~50% nudge one step on v
+        const jh = (ran() - 0.5) < 0 ? 0 : 1; // ~50% nudge one step on h
         const jittered = { v: Math.max(1, Math.min(GRID_HEIGHT, aim.v + jv)), h: Math.max(1, Math.min(GRID_WIDTH, aim.h + jh)) };
 
         const rpos = romulan.ship.position;
@@ -316,7 +313,7 @@ function fireRomulanTorpedoes(target: Target): void {
             // FORTRAN ROMTOR parity:
             // If a star is hit, 80% chance to cause a nova centered on that star,
             // crediting the Romulan as the attacker. (snova + notifications)
-            if (iran(100) <= 80) {
+            if (iran(100) < 80) {
                 // emit event first so loggers/clients see the cause
                 const at: GridCoord = { v: hit?.v ?? aim.v, h: hit?.h ?? aim.h };
                 emitNovaTriggered(at, romulan);
@@ -533,10 +530,10 @@ function generateRomulanMessage(single: boolean): string {
     const species = ["sub-Romulan ", "human ", "klingon "];
     const objects = ["mutant", "cretin", "toad", "worm", "parasite"];
 
-    const l = lead[Math.floor(Math.random() * lead.length)];
-    const a = adjectives[Math.floor(Math.random() * adjectives.length)];
-    const s = single ? "" : species[Math.floor(Math.random() * species.length)];
-    const o = objects[Math.floor(Math.random() * objects.length)];
+    const l = lead[iran(lead.length)];
+    const a = adjectives[iran(adjectives.length)];
+    const s = single ? "" : species[iran(species.length)];
+    const o = objects[iran(objects.length)];
 
     return `${l}${a}${s}${o}${single ? "!" : "s!"}`;
 }

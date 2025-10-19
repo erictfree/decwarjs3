@@ -2,7 +2,7 @@ import { Blackhole } from "./blackhole.js";
 import { Planet } from "./planet.js";
 import { Player } from "./player.js";
 import { Star } from "./star.js";
-import { setRandomSeed } from './util/random.js';
+import { setRandomSeed, iran, getRandom } from './util/random.js';
 import { PointsManager } from "./points.js";
 import { settings, INACTIVITY_TIMEOUT } from "./settings.js";
 import { updateRomulan, maybeSpawnRomulan } from "./romulan.js";
@@ -62,8 +62,8 @@ export function generateGalaxy(seed?: string): void {
     //    c-- nplnet = int(20.0 + ran(0) * 61.0)
     //     nplnet = 60 ! ALWAYS insert max. # of planets
 
-    const nstar = Math.floor(51 * Math.random()) * 5 + 100;
-    const nhole = Math.floor(41 * Math.random() + 10);
+    const nstar = iran(51) * 5 + 100;
+    const nhole = iran(41) + 10;
     const nplnet = 60;
 
     planets = Planet.generate(nplnet);
@@ -118,11 +118,12 @@ export function generateGalaxy(seed?: string): void {
 //         player.updateLifeSupport();
 //     }
 // }
-export function processTimeConsumingMove(actor?: Player, opts: { attributed?: boolean } = { attributed: true }): void {
+// `actor` is who consumed time; attributed=true means a real TCM (not idle sweep).
+export function processTimeConsumingMove(actor?: Player | null, opts?: { attributed?: boolean }) {
     // prevent overlap; keep DECWAR feel (no precise scheduling)
     if (__tcmRunning) return;
     __tcmRunning = true;
-    const attributed = !!opts.attributed && !!actor?.ship;
+    const attributed = !!opts?.attributed && !!actor?.ship;
     const ctx: Player | undefined = actor ?? players.find(pl => pl.ship);
     if (attributed && actor?.ship) {
         console.log("processTimeConsumingMove", actor.ship.name);
@@ -184,20 +185,22 @@ export function processTimeConsumingMove(actor?: Player, opts: { attributed?: bo
         // botChatterTick();
     }
 
-    // Life support upkeep for everyone
-    for (const p of players) p.updateLifeSupport();
+    // === Life-support tick (actor-only, only on attributed TCMs, and only if undocked) ===
+    if (opts?.attributed && actor?.ship && !actor.ship.docked) {
+        actor.updateLifeSupport();
+    }
     __tcmLastRun = Date.now();
     __tcmRunning = false;
 }
 
-// Debounced "idle nudge" to call from *sync* commands so the world
-// doesn't feel frozen when players spam cheap actions.
-export function nudgeTCMIdle(_player?: Player): void {
+// Idle nudge used when players spam non-TCM commands.
+// IMPORTANT: Non-attributed — should NOT tick any life support.
+export function nudgeTCMIdle(): void {
     const now = Date.now();
     if (__tcmRunning) return;
     if (now - __tcmLastRun < __IDLE_NUDGE_MS) return;
     // advance world unattributed; do not bump any ship stardate/turns
-    processTimeConsumingMove(undefined, { attributed: false });
+    processTimeConsumingMove(null, { attributed: false });
 }
 
 function updateGame(): void {
@@ -267,7 +270,7 @@ export function performPlanetOrBaseAttacks(base: boolean = false): void {
     for (const planet of planets) {
         if (planet.isBase !== base) continue; // Bases if base=true, planets if base=false
         if (planet.side === "NEUTRAL") {
-            if (!base && Math.random() < 0.5) continue;
+            if (!base && getRandom() < 0.5) continue;
         }
 
         for (const player of players) {

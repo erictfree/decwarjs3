@@ -165,14 +165,16 @@ export function processNextCommand(player: Player): void {
         matchedCommand(player, commandObject);
         player.processingCommand = false;
         // Light, debounced nudge so the world advances if players only use sync cmds.
-        nudgeTCMIdle(player);
+        // IMPORTANT: keep this non-attributed so it does NOT tick life support.
+        nudgeTCMIdle();
         //sendAllPendingMessages()
         processNextCommand(player);
     } else {
         matchedCommand(player, commandObject, () => {
             //gameSettings.timeConsumingMoves++;  PUT BACK TODO
             player.processingCommand = false;
-            processTimeConsumingMove(player); // true "time consumed"
+            // Actor-only, attributed TCM: LS tick will happen inside game epilogue for this actor only.
+            processTimeConsumingMove(player, { attributed: true });
             processNextCommand(player);
         });
     }
