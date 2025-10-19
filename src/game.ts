@@ -32,16 +32,17 @@ export const bases = {
 };
 export const stars: Star[] = [];
 export const blackholes: Blackhole[] = [];
-export const stardate: number = 0;
+// Global stardate is not used (per-player stardate is shown). Removing to avoid confusion.
+// export const stardate: number = 0;
 export const pointsManager: PointsManager = new PointsManager();
 
 export const PLANET_PHASER_RANGE = 2; // Fortran pdist <= 2
 
 // ---- lightweight TCM debounce + idle fallback ---------------------------
-let __tcmRunning = false;
-let __tcmLastRun = 0;
-const __IDLE_NUDGE_MS = 2000;  // sync-command nudge at most ~once/2s
-const __MAX_IDLE_MS = 5000;  // advance at least every 5s during total lulls
+let tcmRunning = false;
+let tcmLastRun = 0;
+const IDLE_NUDGE_MS = 3000;  // sync-command nudge at most ~once/2s
+const MAX_IDLE_MS = 5000;    // advance at least every 5s during total lulls
 // -------------------------------------------------------------------------
 
 // mark existing player objects as bots
@@ -80,11 +81,7 @@ export function generateGalaxy(seed?: string): void {
     console.log(nstar, nhole, nplnet);
     settings.generated = true;
 
-    // Optional: spawn one bot on each side for testing
-    if (process.env.SPAWN_SIDE_BOTS === "1") {
-        spawnSideBot("FEDERATION", "BOT-KIRK");
-        spawnSideBot("EMPIRE", "BOT-KOL");
-    }
+    // No explicit spawns; rely on ensureBots() during sweeps.
 }
 
 // export function processTimeConsumingMove(player: Player) {
@@ -122,14 +119,12 @@ export function generateGalaxy(seed?: string): void {
 // `actor` is who consumed time; attributed=true means a real TCM (not idle sweep).
 export function processTimeConsumingMove(actor?: Player | null, opts?: { attributed?: boolean }) {
     // prevent overlap; keep DECWAR feel (no precise scheduling)
-    if (__tcmRunning) return;
-    __tcmRunning = true;
+    if (tcmRunning) return;
+    tcmRunning = true;
     const attributed = !!opts?.attributed && !!actor?.ship;
     const ctx: Player | undefined = actor ?? players.find(pl => pl.ship);
-    if (attributed && actor?.ship) {
-        console.log("processTimeConsumingMove", actor.ship.name);
-    } else {
-        console.log("processTimeConsumingMove", "no ship");
+    if (process.env.DEBUG_TCM === "1") {
+        console.log("processTimeConsumingMove", attributed && actor?.ship ? actor.ship.name : "idle");
     }
 
     // Team turn bookkeeping (only when attributed)
@@ -143,20 +138,15 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
         }
     }
 
-    // Stardate only advances for the attributed actor; world time always advances
+    // Stardates: actor gets +1 only when attributed; GLOBAL stardate always advances per TCM.
     if (attributed && actor?.ship) actor.stardate += 1;
+    settings.stardate += 1;
     settings.dotime += 1;
 
     // ACTIVE human players only (exclude Romulan), never 0; fatal threshold
-    const numply = Math.max(
-        1,
-        players.filter(p =>
-            p?.ship &&
-            p.ship.side !== "ROMULAN" &&
-            p.ship.energy > 0 &&
-            p.ship.damage < SHIP_FATAL_DAMAGE
-        ).length
-    );
+    const isAliveHuman = (p: Player) =>
+        !!p?.ship && p.ship.side !== "ROMULAN" && p.ship.energy > 0 && p.ship.damage < SHIP_FATAL_DAMAGE;
+    const numply = Math.max(1, players.filter(isAliveHuman).length);
 
     // Once per full sweep of players
     if (settings.dotime >= numply) {
@@ -164,12 +154,7 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
         // If there is no live ship context (e.g., empty server), skip ship-scoped routines.
         if (ctx?.ship) {
             // Count teammates using the SAME alive predicate used for numply
-            const alivePlayers = players.filter(p =>
-                p?.ship &&
-                p.ship.side !== "ROMULAN" &&
-                p.ship.energy > 0 &&
-                p.ship.damage < SHIP_FATAL_DAMAGE
-            );
+            const alivePlayers = players.filter(isAliveHuman);
             const moverSide = ctx.ship.side;
             const numsid = Math.max(1, alivePlayers.filter(p => p.ship!.side === moverSide).length);
             // === Defense & regen in DECWAR order ===
@@ -186,9 +171,11 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
             maybeSpawnRomulan();     // ROMDRV spawn cadence
         }
 
-        // General side-playing bots (own ships; NullSocket; no relation to humans)
-        ensureBots(2);        // keep exactly two bot ships alive
-        updateSideBots();     // drive them this sweep
+        // General side-playing bots (testing only). Guard with env to avoid unintended CPU use.
+        if (process.env.SPAWN_SIDE_BOTS === "1") {
+            ensureBots(2);      // keep exactly two bot ships alive
+            updateSideBots();   // drive them this sweep
+        }
     } else {
         // If bots should act every time-consuming move instead, keep them here:
         // updateBots();
@@ -199,16 +186,16 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
     if (opts?.attributed && actor?.ship && !actor.ship.docked) {
         actor.updateLifeSupport();
     }
-    __tcmLastRun = Date.now();
-    __tcmRunning = false;
+    tcmLastRun = Date.now();
+    tcmRunning = false;
 }
 
 // Idle nudge used when players spam non-TCM commands.
 // IMPORTANT: Non-attributed — should NOT tick any life support.
 export function nudgeTCMIdle(): void {
     const now = Date.now();
-    if (__tcmRunning) return;
-    if (now - __tcmLastRun < __IDLE_NUDGE_MS) return;
+    if (tcmRunning) return;
+    if (now - tcmLastRun < IDLE_NUDGE_MS) return;
     // advance world unattributed; do not bump any ship stardate/turns
     processTimeConsumingMove(null, { attributed: false });
 }
@@ -221,9 +208,9 @@ function updateGame(): void {
         checkForBlackholes();
     }
 
-    // Idle fallback: advance TCM at least every 5s even if nobody does
-    // any time-consuming moves (keeps bases/planets/romulans from stalling).
-    if (!__tcmRunning && Date.now() - __tcmLastRun >= __MAX_IDLE_MS) {
+    // Idle fallback: advance TCM at least every 5s even if nobody does any
+    // time-consuming moves. This complements nudgeTCMIdle() (called after bursts).
+    if (!tcmRunning && Date.now() - tcmLastRun >= MAX_IDLE_MS) {
         // advance world unattributed; do not bump any ship stardate/turns
         processTimeConsumingMove(undefined, { attributed: false });
     }

@@ -24,6 +24,7 @@
     "prestart": "npm run build",
     "start": "cross-env API_PORT=3001 node dist/server.js",
     "api": "cross-env API_PORT=3001 node dist/server.js",
+    "apibots": "cross-env API_PORT=3001 SPAWN_SIDE_BOTS=1 node dist/server.js",
     "test": "jest",
     "lint": "eslint 'src/**/*.{ts,js}'",
     "format": "prettier --write 'src/**/*.{ts,js,json,md}'"

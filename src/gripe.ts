@@ -1,6 +1,6 @@
 import { sendMessageToClient } from './communication.js';
 import { Player } from './player.js';
-import { players, limbo, stardate, blackholes } from './game.js';
+import { players, limbo, blackholes } from './game.js';
 import { Blackhole } from './blackhole.js';
 import * as fs from 'fs';
 
@@ -23,7 +23,7 @@ export function gripeCommand(player: Player): void {
         const currentDateTime = new Date(nowMs).toLocaleString('en-US', {
             hour12: false
         });
-        fs.appendFileSync('DECWAR.GRP', `${currentDateTime} ${stardate} ${pl.ship?.name || 'Unknown'}: ${resp}\r\n`);
+        fs.appendFileSync('DECWAR.GRP', `${currentDateTime} ${pl.ship?.name || 'Unknown'}: ${resp}\r\n`);
         if (limbo.includes(player) && player.ship) {
             swapPlayerForBackhole(player);
         }
