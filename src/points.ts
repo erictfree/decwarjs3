@@ -30,6 +30,11 @@ export class PointsManager {
   private planetsCaptured: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
   private planetsDestroyed: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
   private starsDestroyed: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+  // === DECWAR buckets that the POINTS UI expects ===
+  private damageToEnemies: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+  private damageToBases: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+  private basesBuilt: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+  private damageToRomulans: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
   // === Per-category human-unit tallies for the POINTS UI (FORTRAN categories) ===
   private categoryTotals: Record<Side, Record<PointCategory, number>> = {
     FEDERATION: { damageToEnemies: 0, enemiesDestroyed: 0, damageToBases: 0, planetsCaptured: 0, basesBuilt: 0, damageToRomulans: 0, starsDestroyed: 0, planetsDestroyed: 0 },
@@ -37,21 +42,21 @@ export class PointsManager {
     ROMULAN: { damageToEnemies: 0, enemiesDestroyed: 0, damageToBases: 0, planetsCaptured: 0, basesBuilt: 0, damageToRomulans: 0, starsDestroyed: 0, planetsDestroyed: 0 },
     NEUTRAL: { damageToEnemies: 0, enemiesDestroyed: 0, damageToBases: 0, planetsCaptured: 0, basesBuilt: 0, damageToRomulans: 0, starsDestroyed: 0, planetsDestroyed: 0 },
   };
-  private basesBuilt: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
 
   // SIDE-OWNED sources (bases, captured planets, auto-defenses)
   creditInstallationDamage(ownerSide: Side, amount: number) {
     if (ownerSide === "NEUTRAL" || amount <= 0) return;
     this.teamTotals[ownerSide] = (this.teamTotals[ownerSide] ?? 0) + amount;
     this.turnTotals[ownerSide] = (this.turnTotals[ownerSide] ?? 0) + amount;
-    // DEFENSE fire awards damage-to-enemies points to the owner (FORTRAN)
+    // Installation fire counts as "damage to enemies" in FORTRAN
     this.categoryTotals[ownerSide].damageToEnemies += amount;
   }
   creditInstallationKill(ownerSide: Side, _bonus: number) {
-    // FORTRAN: enemy ship destroyed is +500 (not a 5000 damage spike)
     if (ownerSide === "NEUTRAL") return;
-    this.teamTotals[ownerSide] = (this.teamTotals[ownerSide] ?? 0) + 500;
-    this.turnTotals[ownerSide] = (this.turnTotals[ownerSide] ?? 0) + 500;
+    // FORTRAN: +500 per enemy destroyed (installation-originated)
+    const award = 500;
+    this.teamTotals[ownerSide] = (this.teamTotals[ownerSide] ?? 0) + award;
+    this.turnTotals[ownerSide] = (this.turnTotals[ownerSide] ?? 0) + award;
     this.enemiesDestroyed[ownerSide] = (this.enemiesDestroyed[ownerSide] ?? 0) + 1;
     this.categoryTotals[ownerSide].enemiesDestroyed += 1;
   }
@@ -63,17 +68,28 @@ export class PointsManager {
     this.playerTotals.set(attacker, (this.playerTotals.get(attacker) ?? 0) + amount);
     this.teamTotals[side] = (this.teamTotals[side] ?? 0) + amount;
     this.turnTotals[side] = (this.turnTotals[side] ?? 0) + amount;
-    // Ship→ship damage bucket (FORTRAN shows damage as human units)
     this.categoryTotals[side].damageToEnemies += amount;
   }
-  creditShipKill(attacker: Player, victimSide: Side, _bonus: number) {
+
+  /**
+   * Ship → BASE damage (FORTRAN "Damage to bases" bucket; 1:1 human units).
+   * Use when a player's attack damages an enemy *base* (not a ship).
+   */
+  creditBaseDamageByShip(attacker: Player, amount: number) {
+    const side = attacker.ship?.side as Side | undefined;
+    if (!side || side === "NEUTRAL" || amount <= 0) return;
+    this.playerTotals.set(attacker, (this.playerTotals.get(attacker) ?? 0) + amount);
+    this.teamTotals[side] = (this.teamTotals[side] ?? 0) + amount;
+    this.turnTotals[side] = (this.turnTotals[side] ?? 0) + amount;
+    this.categoryTotals[side].damageToBases += amount;
+  }
+  creditShipKill(attacker: Player, _victimSide: Side, _bonus: number) {
     const side = attacker.ship?.side as Side | undefined;
     if (!side || side === "NEUTRAL") return;
-    // FORTRAN: +500 per enemy destroyed
+    // FORTRAN: +500 per enemy ship destroyed
     this.playerTotals.set(attacker, (this.playerTotals.get(attacker) ?? 0) + 500);
     this.teamTotals[side] = (this.teamTotals[side] ?? 0) + 500;
     this.turnTotals[side] = (this.turnTotals[side] ?? 0) + 500;
-    // compat counter
     this.enemiesDestroyed[side] = (this.enemiesDestroyed[side] ?? 0) + 1;
     this.categoryTotals[side].enemiesDestroyed += 1;
   }
@@ -83,6 +99,49 @@ export class PointsManager {
     if (by) return this.creditShipDamage(by, amount);
     return this.creditInstallationDamage(side, amount);
   }
+
+  // Damage specifically to enemy bases is tracked in its own bucket (FORTRAN).
+  addDamageToBases(amount: number, by: Player | undefined, side: Side) {
+    if (amount <= 0) return;
+    if (by) {
+      this.creditBaseDamageByShip(by, amount);
+      return;
+    }
+    if (!side || side === "NEUTRAL") return;
+    this.teamTotals[side] = (this.teamTotals[side] ?? 0) + amount;
+    this.turnTotals[side] = (this.turnTotals[side] ?? 0) + amount;
+    this.categoryTotals[side].damageToBases += amount;
+  }
+
+  /**
+   * Romulan damage (FORTRAN: "Damage to Romulans" — scale 1).
+   * Must credit team/turn (and player when attributed) exactly like normal damage.
+   */
+  addDamageToRomulans(amount: number, by: Player | undefined, side: Side) {
+    if (amount <= 0) return;
+    const s: Side | undefined = by?.ship?.side ?? side;
+    if (!s || s === "NEUTRAL") return;
+    // bucket (for POINTS columns)
+    this.damageToRomulans[s] = (this.damageToRomulans[s] ?? 0) + amount;
+    // per-player attribution (if a ship dealt the damage)
+    if (by) {
+      this.playerTotals.set(by, (this.playerTotals.get(by) ?? 0) + amount);
+    }
+    // team and turn totals (scale 1 like other damage)
+    this.teamTotals[s] = (this.teamTotals[s] ?? 0) + amount;
+    this.turnTotals[s] = (this.turnTotals[s] ?? 0) + amount;
+  }
+
+  // FORTRAN: Bases built (1000 points each) — award immediately and track category
+  addBasesBuilt(count: number, side: Side) {
+    if (count <= 0 || side === "NEUTRAL") return;
+    this.basesBuilt[side] = (this.basesBuilt[side] ?? 0) + count;
+    const award = 1000 * count;
+    this.teamTotals[side] = (this.teamTotals[side] ?? 0) + award;
+    this.turnTotals[side] = (this.turnTotals[side] ?? 0) + award;
+    this.categoryTotals[side].basesBuilt += count;
+  }
+
 
   // (optional) getters for POINTS UI
   getTeamTotals() { return { ...this.teamTotals }; }
@@ -115,24 +174,6 @@ export class PointsManager {
     }
   }
 
-  // Legacy "damage to bases" meter; treat as generic damage credit.
-  addDamageToBases(amount: number, by: Player | undefined, side: Side) {
-    // In FORTRAN, damage to bases is a separate bucket; award as damage and bucket it.
-    if (amount <= 0) return;
-    if (by) {
-      const s = by.ship?.side as Side | undefined;
-      if (!s || s === "NEUTRAL") return;
-      this.playerTotals.set(by, (this.playerTotals.get(by) ?? 0) + amount);
-      this.teamTotals[s] = (this.teamTotals[s] ?? 0) + amount;
-      this.turnTotals[s] = (this.turnTotals[s] ?? 0) + amount;
-      this.categoryTotals[s].damageToBases += amount;
-      return;
-    }
-    if (!side || side === "NEUTRAL") return;
-    this.teamTotals[side] = (this.teamTotals[side] ?? 0) + amount;
-    this.turnTotals[side] = (this.turnTotals[side] ?? 0) + amount;
-    this.categoryTotals[side].damageToBases += amount;
-  }
 
   // Nova star collapse counter; no points here (adjust if you want stars to grant points).
   addStarsDestroyed(count: number, _by: Player | undefined, side: Side) {
@@ -155,33 +196,7 @@ export class PointsManager {
     this.turnTotals[side] = (this.turnTotals[side] ?? 0) - penalty;
   }
 
-  // (Optional hook if your build flow calls it; FORTRAN awards +1000 per base built)
-  addBasesBuilt(count: number, _by: Player | undefined, side: Side) {
-    if (!side || side === "NEUTRAL" || count === 0) return;
-    this.basesBuilt[side] = (this.basesBuilt[side] ?? 0) + count;
-    this.categoryTotals[side].basesBuilt += count;
-    const award = 1000 * count;
-    this.teamTotals[side] = (this.teamTotals[side] ?? 0) + award;
-    this.turnTotals[side] = (this.turnTotals[side] ?? 0) + award;
-  }
 
-  // Romulan damage (FORTRAN counts damage; Romulan kill is +500)
-  addDamageToRomulans(amount: number, by: Player | undefined, side: Side) {
-    if (amount <= 0) return;
-    if (by) {
-      const s = by.ship?.side as Side | undefined;
-      if (!s || s === "NEUTRAL") return;
-      this.playerTotals.set(by, (this.playerTotals.get(by) ?? 0) + amount);
-      this.teamTotals[s] = (this.teamTotals[s] ?? 0) + amount;
-      this.turnTotals[s] = (this.turnTotals[s] ?? 0) + amount;
-      this.categoryTotals[s].damageToRomulans += amount;
-      return;
-    }
-    if (!side || side === "NEUTRAL") return;
-    this.teamTotals[side] = (this.teamTotals[side] ?? 0) + amount;
-    this.turnTotals[side] = (this.turnTotals[side] ?? 0) + amount;
-    this.categoryTotals[side].damageToRomulans += amount;
-  }
   addRomulansDestroyed(count: number, by: Player | undefined, side: Side) {
     if (count === 0) return;
     const s = by ? (by.ship?.side as Side | undefined) : side;
@@ -194,17 +209,23 @@ export class PointsManager {
   }
 
   // UI helpers used by points panel
-  // Return a Points-shaped object (typed as any to match existing UI type without changing its definition).
+  // Return the eight raw DECWAR buckets from categoryTotals (single source of truth).
   getPointsForSide(side: Side): any {
-    // Provide the exact category set the POINTS table expects
-    const cats = { ...this.categoryTotals[side] };
-    // ensure counters that live outside categoryTotals are reflected
-    cats.enemiesDestroyed = this.enemiesDestroyed[side] ?? cats.enemiesDestroyed;
-    cats.planetsCaptured = this.planetsCaptured[side] ?? cats.planetsCaptured;
-    cats.planetsDestroyed = this.planetsDestroyed[side] ?? cats.planetsDestroyed;
-    cats.starsDestroyed = this.starsDestroyed[side] ?? cats.starsDestroyed;
-    cats.basesBuilt = this.basesBuilt[side] ?? cats.basesBuilt;
-    return cats;
+    const c = this.categoryTotals[side];
+    return {
+      damageToEnemies: c.damageToEnemies,
+      enemiesDestroyed: c.enemiesDestroyed,
+      damageToBases: c.damageToBases,
+      planetsCaptured: c.planetsCaptured,
+      basesBuilt: c.basesBuilt,
+      damageToRomulans: c.damageToRomulans,
+      starsDestroyed: c.starsDestroyed,
+      planetsDestroyed: c.planetsDestroyed,
+      // extras shown by your UI but not part of FORTRAN point math
+      total: this.teamTotals[side] ?? 0,
+      turnTotal: this.turnTotals[side] ?? 0,
+      shipsCommissioned: this.shipsCommissioned[side] ?? 0,
+    };
   }
   getShipsCommissioned(side: Side): number {
     return this.shipsCommissioned[side] ?? 0;

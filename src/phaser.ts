@@ -357,11 +357,16 @@ export function applyPhaserDamage(
     if (!baseKilledNow) {
         if (targetIsShip) {
             const ihita = Math.max(0, Math.round(hita));
+            const wasAlive = (target as Player).ship!.damage < SHIP_FATAL_DAMAGE;
             (target as Player).ship!.damage += ihita;                 // KSDAM += ihita
             (target as Player).ship!.energy = Math.max(
                 0,
                 (target as Player).ship!.energy - hita * ran()   // KSNRGY -= hita * RND()
             );
+            // Award kill credit if this hit destroyed the ship
+            if (wasAlive && (target as Player).ship!.damage >= SHIP_FATAL_DAMAGE) {
+                pointsManager.creditShipKill(attacker, (target as Player).ship!.side, 500);
+            }
         } else {
             // Bases lose only 1% of the computed hit (DECWAR parity)
             // Bases lose 1% of the computed hit, with a minimum of 1 when hita > 0

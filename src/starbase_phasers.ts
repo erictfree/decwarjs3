@@ -1,7 +1,7 @@
 import { Player } from './player.js';
 import { Side } from './settings.js';
 import { Planet } from './planet.js';
-import { bases, players } from './game.js';
+import { bases, players, pointsManager, SHIP_FATAL_DAMAGE } from './game.js';
 import { chebyshev } from './coords.js';
 import { phadamCore } from './phaser.js';
 import { maybeApplyShipCriticalParity } from './phaser.js';
@@ -9,7 +9,6 @@ import { applyDamage } from './torpedo.js';
 import { MAX_SHIELD_ENERGY } from './settings.js';
 import { addPendingMessage } from './communication.js';
 import { Ship } from './ship.js';
-import { pointsManager } from './game.js';
 import { getRandom } from './util/random.js'; // deterministic RNG used elsewhere
 import { emitShieldsChanged } from './api/events.js';
 

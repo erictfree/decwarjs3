@@ -1,6 +1,7 @@
 import { Player } from './player.js';
 import { ran } from './util/random.js';
 import { Command } from './command.js';
+import { pointsManager, SHIP_FATAL_DAMAGE } from './game.js';
 import {
     addPendingMessage,
     putClientOnHold,
@@ -18,7 +19,7 @@ import {
 } from './settings.js';
 import { Planet } from './planet.js';
 import { isInBounds, bresenhamLine, chebyshev, ocdefCoords } from './coords.js';
-import { players, bases, planets, stars, blackholes, pointsManager, removePlayerFromGame, checkEndGame } from './game.js';
+import { players, bases, planets, stars, blackholes, removePlayerFromGame, checkEndGame } from './game.js';
 import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
 import { triggerNovaAt } from './nova.js';
 import { Star } from './star.js';
@@ -44,7 +45,6 @@ type ScoringAPI = {
     addDamageToEnemies?(amount: number, source: Player, side: Side): void;
 };
 
-import { SHIP_FATAL_DAMAGE } from './game.js';
 
 type TorpedoCollision =
     | { type: "ship"; player: Player }
@@ -1030,6 +1030,7 @@ export function applyDamage(
 
     // Ships
     if (target instanceof Player && target.ship) {
+        const wasAlive = target.ship.damage < SHIP_FATAL_DAMAGE;
         target.ship.energy -= hita;
         target.ship.damage += hita / 2;
 
@@ -1038,10 +1039,9 @@ export function applyDamage(
 
         if (target.ship.energy <= 0 || target.ship.damage >= SHIP_FATAL_DAMAGE) {
             isDestroyed = true;
-            // Increment kill counter ONCE per victim hull and mark credited
-            if (source instanceof Player && source.ship && !target.ship.__killCredited) {
-                target.ship.__killCredited = true;
-                pointsManager.addEnemiesDestroyed(1, source, source.ship.side);
+            // Award kill credit if this hit destroyed the ship
+            if (source instanceof Player && source.ship && wasAlive) {
+                pointsManager.creditShipKill(source, target.ship.side, 500);
             }
             emitShipDestroyed(
                 target.ship.name,
