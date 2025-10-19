@@ -19,93 +19,115 @@ export type PointCategory =
 type Points = Record<PointCategory, number>;
 
 export class PointsManager {
-  private sidePoints: Record<Side, Points>;
-  private shipsCommissioned: Record<Side, number>;
+  // === Primary totals (points) ===
+  private teamTotals: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+  private turnTotals: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+  private playerTotals: Map<Player, number> = new Map();
 
-  constructor() {
-    const empty: Points = {
-      damageToEnemies: 0,
-      enemiesDestroyed: 0,
-      damageToBases: 0,
-      planetsCaptured: 0,
-      basesBuilt: 0,
-      damageToRomulans: 0,
-      starsDestroyed: 0,
-      planetsDestroyed: 0,
-    };
-    this.sidePoints = {
-      FEDERATION: { ...empty },
-      EMPIRE: { ...empty },
-      ROMULAN: { ...empty },
-      NEUTRAL: { ...empty },
-    };
-    this.shipsCommissioned = {
-      FEDERATION: 0,
-      EMPIRE: 0,
-      ROMULAN: 0,
-      NEUTRAL: 0,
-    };
+  // === Lightweight counters for UI/compat ===
+  private shipsCommissioned: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+  private enemiesDestroyed: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+  private planetsCaptured: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+  private planetsDestroyed: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+  private starsDestroyed: Record<Side, number> = { FEDERATION: 0, EMPIRE: 0, ROMULAN: 0, NEUTRAL: 0 } as any;
+
+  // SIDE-OWNED sources (bases, captured planets, auto-defenses)
+  creditInstallationDamage(ownerSide: Side, amount: number) {
+    if (ownerSide === "NEUTRAL" || amount <= 0) return;
+    this.teamTotals[ownerSide] = (this.teamTotals[ownerSide] ?? 0) + amount;
+    this.turnTotals[ownerSide] = (this.turnTotals[ownerSide] ?? 0) + amount;
+  }
+  creditInstallationKill(ownerSide: Side, bonus: number) {
+    if (ownerSide === "NEUTRAL" || bonus <= 0) return;
+    this.teamTotals[ownerSide] = (this.teamTotals[ownerSide] ?? 0) + bonus;
+    this.turnTotals[ownerSide] = (this.turnTotals[ownerSide] ?? 0) + bonus;
   }
 
-  private add(category: PointCategory, amount: number, player: Player | undefined, side: Side): void {
-    console.log(amount, player?.ship?.name, side);
-    if (player) {
-      player.points[category] += amount;
+  // SHIP-OWNED sources (we know the attacker)
+  creditShipDamage(attacker: Player, amount: number) {
+    const side = attacker.ship?.side as Side | undefined;
+    if (!side || side === "NEUTRAL" || amount <= 0) return;
+    this.playerTotals.set(attacker, (this.playerTotals.get(attacker) ?? 0) + amount);
+    this.teamTotals[side] = (this.teamTotals[side] ?? 0) + amount;
+    this.turnTotals[side] = (this.turnTotals[side] ?? 0) + amount;
+  }
+  creditShipKill(attacker: Player, victimSide: Side, bonus: number) {
+    const side = attacker.ship?.side as Side | undefined;
+    if (!side || side === "NEUTRAL" || bonus <= 0) return;
+    this.playerTotals.set(attacker, (this.playerTotals.get(attacker) ?? 0) + bonus);
+    this.teamTotals[side] = (this.teamTotals[side] ?? 0) + bonus;
+    this.turnTotals[side] = (this.turnTotals[side] ?? 0) + bonus;
+    // compat counter
+    this.enemiesDestroyed[side] = (this.enemiesDestroyed[side] ?? 0) + 1;
+  }
+
+  /** @deprecated use creditInstallationDamage/creditShipDamage instead. */
+  addDamageToEnemies(amount: number, by: Player | undefined, side: Side) {
+    if (by) return this.creditShipDamage(by, amount);
+    return this.creditInstallationDamage(side, amount);
+  }
+
+  // (optional) getters for POINTS UI
+  getTeamTotals() { return { ...this.teamTotals }; }
+  getTurnTotals() { return { ...this.turnTotals }; }
+  getPlayerTotal(p: Player) { return this.playerTotals.get(p) ?? 0; }
+
+  // === Back-compat shims ===
+  // Keep behavior minimal & predictable; callers can migrate gradually to explicit APIs.
+
+  // Used by: capture flow UI; records count only (no points by itself here).
+  addPlanetsCaptured(count: number, _by: Player | undefined, side: Side) {
+    if (!side || side === "NEUTRAL" || count === 0) return;
+    this.planetsCaptured[side] = (this.planetsCaptured[side] ?? 0) + count;
+  }
+
+  // Used by: nova/kill paths; increments kill COUNTER only (points should be credited where the kill is decided).
+  addEnemiesDestroyed(count: number, by: Player | undefined, side: Side) {
+    if (by) {
+      // prefer explicit path for points; this shim only keeps a counter for UI
+      this.enemiesDestroyed[by.ship!.side as Side] = (this.enemiesDestroyed[by.ship!.side as Side] ?? 0) + count;
+    } else if (side && side !== "NEUTRAL") {
+      this.enemiesDestroyed[side] = (this.enemiesDestroyed[side] ?? 0) + count;
     }
-    if (side == "FEDERATION") {
-      this.sidePoints.FEDERATION[category] += amount;
-      return;
-    } else if (side == "EMPIRE") {
-      this.sidePoints.EMPIRE[category] += amount;
-      return;
-    } else if (side == "ROMULAN") {
-      this.sidePoints.ROMULAN[category] += amount;
-      return;
-    }
   }
 
-  addDamageToEnemies(amount: number, player: Player | undefined, side: Side): void {
-    this.add('damageToEnemies', amount, player, side);
+  // Legacy "damage to bases" meter; treat as generic damage credit.
+  addDamageToBases(amount: number, by: Player | undefined, side: Side) {
+    if (by) return this.creditShipDamage(by, amount);
+    return this.creditInstallationDamage(side, amount);
   }
 
-  addEnemiesDestroyed(amount: number, player: Player | undefined, side: Side): void {
-    this.add('enemiesDestroyed', amount, player, side);
+  // Nova star collapse counter; no points here (adjust if you want stars to grant points).
+  addStarsDestroyed(count: number, _by: Player | undefined, side: Side) {
+    if (!side || side === "NEUTRAL" || count === 0) return;
+    this.starsDestroyed[side] = (this.starsDestroyed[side] ?? 0) + count;
   }
 
-  addDamageToBases(amount: number, player: Player | undefined, side: Side): void {
-    this.add('damageToBases', amount, player, side);
+  addPlanetsDestroyed(count: number, _by: Player | undefined, side: Side) {
+    if (!side || side === "NEUTRAL" || count === 0) return;
+    this.planetsDestroyed[side] = (this.planetsDestroyed[side] ?? 0) + count;
   }
 
-  addPlanetsCaptured(amount: number, player: Player | undefined, side: Side): void {
-    this.add('planetsCaptured', amount, player, side);
+  // UI helpers used by points panel
+  // Return a Points-shaped object (typed as any to match existing UI type without changing its definition).
+  getPointsForSide(side: Side): any {
+    return {
+      // common fields most score UIs expect; adjust names if your Points type differs
+      total: this.teamTotals[side] ?? 0,
+      turnTotal: this.turnTotals[side] ?? 0,
+      enemiesDestroyed: this.enemiesDestroyed[side] ?? 0,
+      planetsCaptured: this.planetsCaptured[side] ?? 0,
+      planetsDestroyed: this.planetsDestroyed[side] ?? 0,
+      starsDestroyed: this.starsDestroyed[side] ?? 0,
+      shipsCommissioned: this.shipsCommissioned[side] ?? 0,
+    };
   }
-
-  addBasesBuilt(amount: number, player: Player | undefined, side: Side): void {
-    this.add('basesBuilt', amount, player, side);
-  }
-
-  addDamageToRomulans(amount: number, player: Player | undefined, side: Side): void {
-    this.add('damageToRomulans', amount, player, side);
-  }
-
-  addStarsDestroyed(amount: number, player: Player | undefined, side: Side): void {
-    this.add('starsDestroyed', amount, player, side);
-  }
-
-  addPlanetsDestroyed(amount: number, player: Player | undefined, side: Side): void {
-    this.add('planetsDestroyed', amount, player, side);
-  }
-
-  incrementShipsCommissioned(side: Side): void {
-    this.shipsCommissioned[side]++;
-  }
-
   getShipsCommissioned(side: Side): number {
-    return this.shipsCommissioned[side];
+    return this.shipsCommissioned[side] ?? 0;
   }
-
-  getPointsForSide(side: Side): Points {
-    return this.sidePoints[side];
+  incrementShipsCommissioned(side: Side) {
+    if (!side || side === "NEUTRAL") return;
+    this.shipsCommissioned[side] = (this.shipsCommissioned[side] ?? 0) + 1;
   }
 }
 

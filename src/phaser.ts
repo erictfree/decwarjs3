@@ -9,9 +9,9 @@ import {
 import { sendMessageToClient, addPendingMessage, sendOutputMessage } from './communication.js';
 import { chebyshev, ocdefCoords, getCoordsFromCommandArgs } from './coords.js';
 import { Planet } from './planet.js';
-import { players, planets, bases, removePlayerFromGame, checkEndGame, pointsManager } from './game.js';
+import { players, SHIP_FATAL_DAMAGE, planets, bases, removePlayerFromGame, checkEndGame, pointsManager } from './game.js';
 import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
-import { SHIP_FATAL_DAMAGE, PLANET_PHASER_RANGE } from './game.js';
+import { PLANET_PHASER_RANGE } from './game.js';
 import { attackerRef, emitShipDestroyed } from './api/events.js';
 import { emitPhaserEvent, emitShieldsChanged, emitPlanetBaseRemoved } from './api/events.js';
 
@@ -668,16 +668,17 @@ function applyInstallationPhaserToShip(opts: {
     return { hita, killed };
 }
 
-export function planetPhaserDefense(triggeringPlayer: Player): void {
+// counts-in signature: use the sweep's numply for DECWAR-true scaling
+export function planetPhaserDefense(triggeringPlayer: Player, counts?: { numply: number }): void {
     if (!triggeringPlayer.ship) return;
     const isRomulanMove = !!triggeringPlayer.ship.romulanStatus?.isRomulan;
     const moverSide = triggeringPlayer.ship.side;
-    const numply = players.filter(p => p.ship).length;
+    const numply = Math.max(1, counts?.numply ?? 1);
 
     for (const planet of planets) {
         if (planet.isBase) continue; // bases handled elsewhere
-        // NOTE: Non-base planets can fire even with 0 energy/builds (DECWAR-style installs).
-        // Do not early-return on energy==0.
+        // Need at least some builds to have guns (classic feel)
+        if ((planet.builds ?? 0) <= 0) continue;
 
         // Activation rules:
         const isNeutral = planet.side === "NEUTRAL";
@@ -691,14 +692,16 @@ export function planetPhaserDefense(triggeringPlayer: Player): void {
             if (isNeutral && ran() < 0.5) continue;
         }
 
-        // Precompute phit from builds: (50 + 30*builds) / numply
+        // DECWAR PLNATK: phit = (50 + 30*builds) / numply  (builds in 0..5)
         const phit = (50 + 30 * (planet.builds ?? 0)) / Math.max(numply, 1);
 
         // scan for enemy, visible ships in range 2
         for (const p of players) {
             if (!p.ship) continue;
-            if (p.ship.romulanStatus?.cloaked) continue;
-            if (planet.side !== "NEUTRAL" && p.ship.side === planet.side && !p.ship.romulanStatus?.isRomulan) continue;
+            // if cloaked and not revealed, skip
+            if (p.ship.romulanStatus?.cloaked && !p.ship.romulanStatus?.isRevealed) continue;
+            // never shoot same-side ships
+            if (planet.side !== "NEUTRAL" && p.ship.side === planet.side) continue;
 
             const dist = chebyshev(planet.position, p.ship.position);
             if (dist > PLANET_PHASER_RANGE) continue;
@@ -713,11 +716,13 @@ export function planetPhaserDefense(triggeringPlayer: Player): void {
 
             if (hita <= 0) continue;
 
-            // Team scoring: damage goes to the planet’s captor side; kill yields +5000
+            // Team scoring: credit owner side via existing API; skip neutral
             if (planet.side !== "NEUTRAL") {
-                pointsManager.addDamageToEnemies(hita, /*by*/ undefined, planet.side);
-                if (killed) {
-                    pointsManager.addDamageToEnemies(5000, /*by*/ undefined, planet.side);
+                (pointsManager as any).addDamageToEnemies?.(hita, /*by*/ undefined, planet.side);
+                // Kill bonus exactly once per victim hull
+                if (killed && p.ship && !p.ship.__killCredited) {
+                    p.ship.__killCredited = true;
+                    (pointsManager as any).addEnemiesDestroyed?.(1, /*by*/ undefined, planet.side);
                 }
             }
 

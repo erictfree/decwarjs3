@@ -1,13 +1,12 @@
 import { sendMessageToClient, sendMessageToOthersWithFormat } from "./communication.js";
 import { ran } from "./util/random.js";
-import { players, stars, pointsManager, removePlayerFromGame, planets, bases, checkEndGame, blackholes } from "./game.js";
+import { players, stars, pointsManager, removePlayerFromGame, planets, bases, checkEndGame, blackholes, SHIP_FATAL_DAMAGE } from "./game.js";
 import { Player } from "./player.js";
 import { ocdefCoords, isAdjacent } from "./coords.js";
 import { disconnectTractorWithReason } from "./tractor.js";
 import { Planet } from "./planet.js";
 import { Ship } from "./ship.js";
 import { emitShipUndocked, emitNovaTriggered, emitObjectDisplaced } from "./api/events.js";
-
 
 // Check if a position is within the galaxy (Fortran: ingal)
 function isInGalaxy(v: number, h: number): boolean {
@@ -240,9 +239,16 @@ function applyNovaDamageShip(attacker: Player, player: Player, damage: number, v
         : `You were hit by a nova at ${coords} for ${Math.round(damage)} damage!`;
     sendMessageToClient(player, msg);
 
-    if (player.ship.energy <= 0 || player.ship.damage >= 2500) {
-        if (attacker !== player && attacker.ship) {
-            pointsManager.addEnemiesDestroyed(1, attacker, attacker.ship.side);
+    if (player.ship.energy <= 0 || player.ship.damage >= SHIP_FATAL_DAMAGE) {
+        // Credit kill once (ship or installation path elsewhere). For ship attacker:
+        if (attacker && attacker !== player && attacker.ship) {
+            if (player.ship && !player.ship.__killCredited) {
+                player.ship.__killCredited = true;
+                // Nova kill: use legacy API to increment kill counter
+                (pointsManager as any).addEnemiesDestroyed?.(1, attacker, attacker.ship.side);
+                // If you also want a bonus, uncomment the next line:
+                // (pointsManager as any).addDamageToEnemies?.(5000, attacker, attacker.ship.side);
+            }
         }
         destroyShipByNova(player, v, h);
     }

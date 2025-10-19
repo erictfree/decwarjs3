@@ -13,7 +13,8 @@ import { pointsCommand } from "./points.js";
 import { basphaFireOnce } from "./starbase_phasers.js";
 import { planetPhaserDefense } from "./phaser.js";
 import { baseEnergyRegeneration } from "./planet.js";
-export const SHIP_FATAL_DAMAGE = 25000;  // adjusted for fortran derived code
+// DECWAR help text: ship destroyed at 2500 units of damage
+export const SHIP_FATAL_DAMAGE = 2500;
 import { romulanApproachTick } from "./romulan.js";
 import { emitShipDestroyed, emitShipLeft } from "./api/events.js";
 
@@ -162,10 +163,19 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
         settings.dotime = 0; // reset sweep
         // If there is no live ship context (e.g., empty server), skip ship-scoped routines.
         if (ctx?.ship) {
+            // Count teammates using the SAME alive predicate used for numply
+            const alivePlayers = players.filter(p =>
+                p?.ship &&
+                p.ship.side !== "ROMULAN" &&
+                p.ship.energy > 0 &&
+                p.ship.damage < SHIP_FATAL_DAMAGE
+            );
+            const moverSide = ctx.ship.side;
+            const numsid = Math.max(1, alivePlayers.filter(p => p.ship!.side === moverSide).length);
             // === Defense & regen in DECWAR order ===
-            basphaFireOnce(ctx, numply);          // BASPHA (enemy bases fire once)
-            planetPhaserDefense(ctx);             // PLNATK (planet auto-phasers)
-            baseEnergyRegeneration(ctx);          // BASBLD (after defenses)
+            basphaFireOnce(ctx, numply);                 // BASPHA (enemy bases fire once)
+            planetPhaserDefense(ctx, { numply });        // PLNATK (planet auto-phasers)
+            baseEnergyRegeneration(ctx, { numply, numsid }); // BASBLD (heal a little)
             // ======================================
         }
 

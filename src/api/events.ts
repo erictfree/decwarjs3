@@ -1,5 +1,6 @@
 // src/api/events.ts
 import type { Player } from "../player.js";
+import { ran } from "../util/random.js";
 import type { Planet } from "../planet.js";
 import type { Side } from "../settings.js";
 
@@ -681,7 +682,7 @@ export function emitPlanetBaseRemoved(
  * Comms
  * ========================= */
 
-const msgId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+const msgId = () => ran().toString(36).slice(2) + Date.now().toString(36);
 
 export function emitComms(from: Player, to: CommsRecipient, text: string) {
     if (!from.ship) return;

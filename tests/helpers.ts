@@ -34,6 +34,7 @@ export function makePlayer(name: string, side: Side = "FEDERATION"): Player {
     p.ship.name = name;
     p.ship.side = side;
     p.ship.energy = 5000;
+    p.stardate = 0;
     p.ship.damage = 0;
     p.ship.shieldsUp = true;
     p.ship.shieldEnergy = MAX_SHIELD_ENERGY; // start full

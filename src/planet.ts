@@ -118,42 +118,22 @@ export class Planet {
 }
 
 
-
-// Exact BASBLD parity
-export function baseEnergyRegeneration(triggeringPlayer: Player) {
-    // Helpers
-    const alivePlayers = players.filter(p => p?.ship && p.ship.energy > 0);
-    const numply = alivePlayers.length; // active players only
-    const countActiveForSide = (side: Side) =>
-        Math.max(1, alivePlayers.filter(p => p.ship!.side === side).length); // avoid /0
-
+// Counts-in BASBLD (exact DECWAR parity): pass {numply, numsid} from the sweep
+export function baseEnergyRegeneration(triggeringPlayer: Player, counts: { numply: number; numsid: number }) {
     const isRomulan = !!triggeringPlayer.ship?.romulanStatus?.isRomulan;
-
-    // Integer 'n' exactly like Fortran:
-    // Romulan: n = 50 / (numply + 1)
-    // Player : n = 25 / numsid(team)
     let n: number;
     if (isRomulan) {
-        n = Math.floor(50 / (numply + 1)); // integer division
+        // n = floor(50 / (numply + 1)), both sides heal
+        n = Math.floor(50 / (Math.max(0, counts.numply) + 1));
     } else {
-        const moverSide = triggeringPlayer.ship!.side as Side;
-        const team: Side = moverSide; // FEDERATION | EMPIRE | ROMULAN (ROMULAN shouldn't happen here, but it's typed)
-
-        // numsid(team) — active ships on mover's team
-        const numsidRaw = countActiveForSide(team); // declare/import as (side: Side) => number
-        const numsid = Math.max(1, numsidRaw);      // avoid divide-by-zero
-
-        n = Math.floor(25 / numsid);
+        // n = floor(25 / numsid(team)), opposite side heals
+        const safeNumsid = Math.max(1, counts.numsid);
+        n = Math.floor(25 / safeNumsid);
     }
-
-    // Which bases to regenerate:
-    // - Romulan: both sides
-    // - Player : opposite side only
-    const sidesToRegen: ("FEDERATION" | "EMPIRE")[] = isRomulan
-        ? ["FEDERATION", "EMPIRE"]
-        : triggeringPlayer.ship!.side === "FEDERATION" ? ["EMPIRE"] : ["FEDERATION"];
-
-    // Do the regeneration, capping at 1000 (Fortran min0(..., 1000))
+    const sidesToRegen: ("FEDERATION" | "EMPIRE")[] =
+        isRomulan
+            ? ["FEDERATION", "EMPIRE"]
+            : triggeringPlayer.ship!.side === "FEDERATION" ? ["EMPIRE"] : ["FEDERATION"];
     for (const side of sidesToRegen) {
         const list = side === "FEDERATION" ? bases.federation : bases.empire;
         for (const base of list) {
@@ -163,4 +143,3 @@ export function baseEnergyRegeneration(triggeringPlayer: Player) {
         }
     }
 }
-

@@ -16,8 +16,6 @@ function hasDockTarget(s: Ship): s is Ship & { dockTarget?: DockableTarget | nul
     return "dockTarget" in (s as object);
 }
 
-
-
 type Cooldowns = {
     phasersAvailableAt: [number, number]; // [bank1, bank2]
 };
@@ -38,6 +36,8 @@ export interface DeviceStatus {
 }
 
 export class Ship {
+    /** Internal: prevents awarding kill credit more than once per hull. */
+    public __killCredited: boolean = false;
     public player: Player;
     public position: Position;
     public energy: number;

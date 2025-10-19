@@ -126,9 +126,11 @@ export function basphaFireOnce(mover: Player, numply: number): void {
             // === scoring parity (credit exactly this volley) ===
             const dealt = Math.max(0, Math.round(res.hita));
             try {
-                pointsManager.addDamageToEnemies(dealt, /*player*/ undefined, base.side);
-                if (wasAlive && res.isDestroyed) {
-                    pointsManager.addEnemiesDestroyed(1, /*player*/ undefined, base.side);
+                // scoring: base category + kill-only-once
+                (pointsManager as any).addDamageToBases?.(dealt, /*by*/ undefined, base.side);
+                if (wasAlive && res.isDestroyed && ship.ship && !ship.ship.__killCredited) {
+                    ship.ship.__killCredited = true;
+                    (pointsManager as any).addEnemiesDestroyed?.(1, /*by*/ undefined, base.side);
                 }
             } catch { /* okay if pointsManager is not present */ }
             // ===================================================

@@ -1,4 +1,5 @@
 import { getCoordsFromCommandArgs, chebyshev, ocdefCoords } from "./coords.js";
+import { ran } from "./util/random.js";
 import { planets, bases } from "./game.js";
 import {
     MAX_BUILDS_PER_PLANET,
@@ -100,7 +101,7 @@ export function buildCommand(player: Player, command: Command, done?: () => void
     }
 
     // ---- async build action with jitter ----
-    const delayMs = BUILD_DELAY_MIN_MS + Math.random() * BUILD_DELAY_RANGE;
+    const delayMs = BUILD_DELAY_MIN_MS + ran() * BUILD_DELAY_RANGE;
 
     putClientOnHold(player, "Building...");
     const timer = setTimeout(() => {

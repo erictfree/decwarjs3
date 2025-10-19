@@ -480,6 +480,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
 
             case "planet": {
                 const p = collision.planet;
+                const wasBase = p.isBase; // capture role before damage (torpedoDamage may flip it)
 
                 // Distress like FORTRAN when base is first struck at full shields
                 if (p.isBase && p.energy === 1000) {
@@ -494,7 +495,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 // (optional) capture before if you want it; event only needs after/damage
                 // const energyBefore = p.energy;
 
-                const res = torpedoDamage(player, p); // will no-op on non-base planets by validation
+                const res = torpedoDamage(player, p); // may collapse base and undock internally
 
                 emitBasicTorpedoEvent(
                     player,
@@ -516,11 +517,23 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 emitPlanetHit(p, "torpedo", res.hita, res.isDestroyed, player);
 
                 const coords = ocdefCoords(player.settings.ocdef, player.ship.position, p.position);
-                if (p.isBase) {
-                    sendMessageToClient(player, `Torpedo ${res.hita > 0 ? `hit base @${coords} for ${Math.round(res.hita)} damage` : `was deflected @${coords}`}${res.critdm ? " (CRIT)" : ""}.`);
-                    if (res.isDestroyed) checkEndGame();
+                if (res.isDestroyed) {
+                    // destruction messaging independent of current p.isBase (it may already be flipped inside torpedoDamage)
+                    sendMessageToClient(
+                        player,
+                        wasBase
+                            ? `Torpedo destroyed the base @${coords}!`
+                            : `Torpedo destroyed the captured planet @${coords}!`
+                    );
+                    checkEndGame();
+                } else if (wasBase) {
+                    // base was hit but survived this shot
+                    sendMessageToClient(
+                        player,
+                        `Torpedo ${res.hita > 0 ? `hit base @${coords} for ${Math.round(res.hita)} damage` : `was deflected @${coords}`}${res.critdm ? " (CRIT)" : ""}.`
+                    );
                 } else {
-                    // Optional parity: nibble builds 25% of the time like your Romulan path
+                    // non-base planet: optional infrastructure nibble
                     if (ran() >= 0.75) {
                         p.builds = Math.max(0, p.builds - 1);
                         sendMessageToClient(player, `Torpedo impact on planet @${coords} disrupted infrastructure (-1 builds).`);
@@ -943,9 +956,12 @@ export function torpedoDamage(
         const atkSide = source.ship.side;
 
         if (isPlayer) {
-            const sign = atkSide !== target.ship!.side ? 1 : -1;
-            (pointsManager as unknown as ScoringAPI).addDamageToEnemies?.(5000 * sign, source, atkSide);
-            // ship kill count already handled in applyDamage
+            // Award ship-kill bonus ONCE per victim hull.
+            if (target.ship && !target.ship.__killCredited) {
+                target.ship.__killCredited = true;
+                const sign = atkSide !== target.ship!.side ? 1 : -1;
+                (pointsManager as unknown as ScoringAPI).addDamageToEnemies?.(5000 * sign, source, atkSide);
+            }
         } else if (isBase) {
             const sign = atkSide !== (target as Planet).side ? 1 : -1;
             (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, source, atkSide);
@@ -1022,6 +1038,11 @@ export function applyDamage(
 
         if (target.ship.energy <= 0 || target.ship.damage >= SHIP_FATAL_DAMAGE) {
             isDestroyed = true;
+            // Increment kill counter ONCE per victim hull and mark credited
+            if (source instanceof Player && source.ship && !target.ship.__killCredited) {
+                target.ship.__killCredited = true;
+                pointsManager.addEnemiesDestroyed(1, source, source.ship.side);
+            }
             emitShipDestroyed(
                 target.ship.name,
                 target.ship.side,
@@ -1030,9 +1051,6 @@ export function applyDamage(
                 "combat"
             );
             removePlayerFromGame(target);
-            if (source instanceof Player && source.ship) {
-                pointsManager.addEnemiesDestroyed(1, source, source.ship.side);
-            }
         }
 
         return {

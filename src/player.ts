@@ -273,6 +273,7 @@ export class Player {
         const ship = new Ship(this);
         ship.side = "NEUTRAL";
         ship.name = "NEUTRAL";
+        this.stardate = 0;
         const pos = findEmptyLocation();
         if (pos) {
             ship.position = pos;

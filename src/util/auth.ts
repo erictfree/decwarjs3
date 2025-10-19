@@ -1,5 +1,6 @@
 //import { playerCache } from '../game.js';
 //import { Player } from '../player.js';
+import { ran } from "./random.js";
 // Auth session interface for player authentication
 
 export interface AuthSession {
@@ -11,8 +12,8 @@ export interface AuthSession {
 }
 
 export function generateAccessCode(): string {
-    const part1 = Math.floor(1000 + Math.random() * 9000); // e.g., 4-digit
-    const part2 = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const part1 = Math.floor(1000 + ran() * 9000); // e.g., 4-digit
+    const part2 = ran().toString(36).substring(2, 6).toUpperCase();
     return `${part1}-${part2}`;
 }
 
