@@ -3,6 +3,7 @@ import { Player } from './player.js';
 import { Command, CommandHandler, tokenize } from './command.js';
 import { sendMessageToClient } from './communication.js';
 import { generateGalaxy } from './game.js';
+import { ran, iran } from './util/random.js';
 
 // Import only the valid pre-game handlers
 import { activateCommand } from './activate.js';
@@ -400,7 +401,7 @@ function getBalancedSide(): "EMPIRE" | "FEDERATION" {
     } else if (empCount < fedCount) {
         return "EMPIRE";
     } else {
-        return Math.random() < 0.5 ? "FEDERATION" : "EMPIRE";
+        return ran() < 0.5 ? "FEDERATION" : "EMPIRE";
     }
 }
 
@@ -408,7 +409,7 @@ function getRandomShip(side: Side): string | null {
     if (side == "NEUTRAL") return null;
     const available = getAvailableShips(side);
     if (available.length === 0) return null;
-    const idx = Math.floor(Math.random() * available.length);
+    const idx = iran(available.length);
     return available[idx];
 }
 

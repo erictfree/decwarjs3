@@ -6,6 +6,7 @@ import { players, planets } from './game.js';
 import { Planet } from './planet.js';
 import { bases } from './game.js';
 import { Side } from './settings.js';
+import { ran, iran } from './util/random.js';
 
 
 type DockableTarget = { position: { v: number; h: number } }; // minimal shape
@@ -279,7 +280,7 @@ export class Ship {
 
         function deviceMayFail(ship: Ship, device: keyof typeof ship.devices): boolean {
             const dmg = ship.devices[device];
-            return dmg >= 300 || (dmg >= 100 && Math.random() < 0.25);
+            return dmg >= 300 || (dmg >= 100 && ran() < 0.25);
         }
 
         function deviceMalfunctionMessage(device: string): string {
@@ -355,13 +356,13 @@ export function applyDeviceDamage(
 ): void {
     const devices = (targetDevices ?? Object.keys(ship.devices)) as DeviceName[];
 
-    const hits = 2 + Math.floor(Math.random() * 2); // 2 or 3 hits
+    const hits = 2 + iran(2); // 2 or 3 hits
     const perDevice = Math.floor(totalDamage / hits);
 
     const damageMap: Partial<Record<DeviceName, number>> = {};
 
     for (let i = 0; i < hits; i++) {
-        const target = devices[Math.floor(Math.random() * devices.length)];
+        const target = devices[iran(devices.length)];
         ship.devices[target] += perDevice;
         damageMap[target] = (damageMap[target] ?? 0) + perDevice;
     }

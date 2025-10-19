@@ -1,4 +1,5 @@
 import { Command } from "./command.js";
+import { ran } from "./util/random.js";
 import { CAPTURE_DELAY_MIN_MS } from "./settings.js";
 import {
     sendMessageToClient,
@@ -76,7 +77,7 @@ export function captureCommand(player: Player, command: Command, done?: () => vo
     }
 
     if (planet.side === player.ship.side) {
-        const val = Math.random();
+        const val = ran();
         if (val < 0.33) {
             sendMessageToClient(player, `Planet already captured, sir.\r\n`);
         } else if (val < 0.66) {
@@ -202,7 +203,7 @@ export function captureCommand(player: Player, command: Command, done?: () => vo
             }
 
             // ---- Backlash damage (unchanged semantics) ----
-            const res = applyDamage(planet, player, hit, Math.random());
+            const res = applyDamage(planet, player, hit, ran());
 
             if (res.hita > 0) {
                 sendMessageToClient(

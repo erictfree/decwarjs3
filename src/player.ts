@@ -6,6 +6,7 @@ import { Side, ScanSetting, PromptSetting, OCDEF, ICDEF, OutputSetting, MAX_SHIE
 import { AuthSession } from './util/auth.js';
 import { findEmptyLocation } from './coords.js';
 import { emitShipLeft, emitShipDestroyed } from './api/events.js';
+import { iran } from './util/random.js';
 
 
 const suffocationMessages = [
@@ -208,7 +209,7 @@ export class Player {
                 if (this.ship.lifeSupportFailureTimer > 0) {
                     sendMessageToClient(this, `Life support failure: ${this.ship.lifeSupportFailureTimer} stardates remaining.`);
                 } else {
-                    sendMessageToClient(this, suffocationMessages[Math.floor(Math.random() * suffocationMessages.length)]);
+                    sendMessageToClient(this, suffocationMessages[iran(suffocationMessages.length)]);
                     if (this.ship) {
                         emitShipDestroyed(
                             this.ship.name,

@@ -8,6 +8,7 @@ import {
 import { Ship, applyDeviceDamage } from "./ship.js";
 import { bresenhamLine } from "./coords.js";
 import { GRID_WIDTH, GRID_HEIGHT, WARP_DELAY_MIN_MS, WARP_DELAY_RANGE, IMPULSE_DELAY_MS, IMPULSE_DELAY_RANGE } from "./settings.js";
+import { ran, iran } from "./util/random.js";
 import { isInBounds, getCoordsFromCommandArgs, findObjectAtPosition, ocdefCoords, isAdjacent, getTrailingPosition } from "./coords.js";
 import { Player } from "./player.js";
 import { Command } from "./command.js";
@@ -158,7 +159,7 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
 
     maybeMisnavigate(player, destination);
 
-    const delayMs = WARP_DELAY_MIN_MS + Math.random() * WARP_DELAY_RANGE;
+    const delayMs = WARP_DELAY_MIN_MS + ran() * WARP_DELAY_RANGE;
     const formattedTarget = ocdefCoords(player.settings.ocdef, player.ship.position, { v: destination.v, h: destination.h });
 
     putClientOnHold(player, `Warping to ${formattedTarget} (warp ${warp})...`);
@@ -206,9 +207,9 @@ function maybeDamageFromWarp(ship: Ship, warpDistance: number): void {
     if (warpDistance >= 5) {
         sendMessageToClient(ship.player, `Warning: warp factor ${warpDistance} may damage engines`);
         let damage = 0;
-        if (warpDistance === 5 && Math.random() < 0.2) {
+        if (warpDistance === 5 && ran() < 0.2) {
             damage = 100;
-        } else if (warpDistance >= 6 && Math.random() < 0.5) {
+        } else if (warpDistance >= 6 && ran() < 0.5) {
             damage = 200;
         }
 
@@ -329,7 +330,7 @@ export function impulseCommand(player: Player, command: Command, done?: () => vo
     putClientOnHold(player, "Impulse power...");
 
 
-    const delayMs = IMPULSE_DELAY_MS + Math.random() * IMPULSE_DELAY_RANGE;
+    const delayMs = IMPULSE_DELAY_MS + ran() * IMPULSE_DELAY_RANGE;
 
     const timer = setTimeout(() => {
         releaseClient(player);
@@ -362,8 +363,8 @@ function maybeMisnavigate(player: Player, destination: { v: number; h: number })
     if (ship.devices.computer >= 300) {
         sendMessageToClient(player, "Navigation is inexact: computer inoperative.");
 
-        const offsetV = Math.floor(Math.random() * 3) - 1;
-        const offsetH = Math.floor(Math.random() * 3) - 1; // -1 to +1
+        const offsetV = iran(3) - 1;
+        const offsetH = iran(3) - 1; // -1..+1
 
         destination.v = Math.max(1, Math.min(GRID_HEIGHT, destination.v + offsetV));
         destination.h = Math.max(1, Math.min(GRID_WIDTH, destination.h + offsetH));

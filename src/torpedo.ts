@@ -1,4 +1,5 @@
 import { Player } from './player.js';
+import { ran } from './util/random.js';
 import { Command } from './command.js';
 import {
     addPendingMessage,
@@ -520,7 +521,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                     if (res.isDestroyed) checkEndGame();
                 } else {
                     // Optional parity: nibble builds 25% of the time like your Romulan path
-                    if (Math.random() >= 0.75) {
+                    if (ran() >= 0.75) {
                         p.builds = Math.max(0, p.builds - 1);
                         sendMessageToClient(player, `Torpedo impact on planet @${coords} disrupted infrastructure (-1 builds).`);
                     } else {
@@ -537,7 +538,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 sendMessageToClient(player, formatTorpedoExplosion(player, v, h));
 
                 // outcome: 80% nova
-                const didNova = Math.random() < 0.8;
+                const didNova = ran() < 0.8;
                 if (didNova) {
                     // emit event first for consistent telemetry with Romulan path
                     const at: GridCoord = { v, h };
@@ -619,7 +620,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 }
             }
         } else { // last target
-            const captureDelayMs = 2000 + Math.random() * 2000 + player.ship.devices.torpedo / 100;
+            const captureDelayMs = 2000 + ran() * 2000 + player.ship.devices.torpedo / 100;
             if (fired) {
                 putClientOnHold(player, "");
                 const timer = setTimeout(() => {
@@ -760,12 +761,12 @@ export function torpedoDamage(
     let shieldPct = toPct(rawShieldEnergy, rawShieldMax);
 
     // Base torpedo hit (Fortran TORDAM): 4000..8000
-    const hit = 4000.0 + 4000.0 * Math.random();
-    const rana = Math.random();
+    const hit = 4000.0 + 4000.0 * ran();
+    const rana = ran();
 
     // Deflection test (ONLY when shields are actually up)
     if (shieldsUp && shieldPct > 0) {
-        const rand = Math.random();
+        const rand = ran();
         const rand2 = rana - (shieldPct * 0.001 * rand) + 0.1;
 
         if (rand2 <= 0.0) {
@@ -824,12 +825,12 @@ export function torpedoDamage(
     let critdm = 0;
     let critDeviceName: string | undefined;
     if (isBase && shieldsUp && prevShieldPct > 0 && shieldPct === 0) {
-        const rana2 = Math.random();
+        const rana2 = ran();
         const extra = 50 + Math.floor(100 * rana2); // 50..149
         (target as Planet).energy = Math.max(0, (target as Planet).energy - extra);
         critdm = 1;
 
-        if (Math.random() < 0.10 || (target as Planet).energy <= 0) {
+        if (ran() < 0.10 || (target as Planet).energy <= 0) {
             // Base killed via collapse: award and remove
             // (ensure you have this import somewhere near the top of the file)
             // import { gameEvents } from "./api/events.js";

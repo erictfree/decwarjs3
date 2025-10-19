@@ -5,6 +5,7 @@ import { Star } from "./star.js";
 import { Player } from "./player.js";
 import { Ship } from "./ship.js";
 import { GRID_HEIGHT, GRID_WIDTH, OCDEF, CoordMode } from "./settings.js";
+import { iran } from "./util/random.js";
 import { sendMessageToClient } from "./communication.js";
 
 export type Position = {
@@ -54,8 +55,8 @@ export function findObjectAtPosition(
 
 export function findEmptyLocation(): Position | null {
     for (let attempts = 0; attempts < 1000; attempts++) {
-        const v = Math.floor(Math.random() * GRID_HEIGHT) + 1;
-        const h = Math.floor(Math.random() * GRID_WIDTH) + 1;
+        const v = iran(GRID_HEIGHT) + 1;
+        const h = iran(GRID_WIDTH) + 1;
 
         if (!findObjectAtPosition(v, h)) {
             return { v, h };

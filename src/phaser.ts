@@ -1,6 +1,6 @@
 import { Player } from './player.js';
 import { Command } from './command.js';
-import { ran } from './util/random.js';
+import { ran, iran } from './util/random.js';
 import {
     OutputSetting,
     STARBASE_PHASER_RANGE,
@@ -202,7 +202,7 @@ export function applyPhaserDamage(
             result: "no_effect",
         });
 
-        if (Math.random() < 0.25) {
+        if (ran() < 0.25) {
             if (target.builds > 0) {
                 target.builds = Math.max(0, target.builds - 1);
                 const coords = ocdefCoords(attacker.settings.ocdef, attacker.ship.position, target.position);
@@ -304,12 +304,12 @@ export function applyPhaserDamage(
     if (targetIsBase) {
         const newShieldPct1000 = toPct1000(shieldsAfter, rawShieldMax); // post-drain, pre-hull
         if (prevShieldPct1000 > 0 && newShieldPct1000 === 0) {
-            const rana = Math.random();
+            const rana = ran();
             const extra = 50 + Math.floor(100 * rana); // 50..149
             (target as Planet).energy = Math.max(0, (target as Planet).energy - extra);
             critdm = Math.max(critdm, 1);
 
-            if (Math.random() < 0.1 || (target as Planet).energy <= 0) {
+            if (ran() < 0.1 || (target as Planet).energy <= 0) {
                 klflg = 1;
 
                 if (attacker.ship) {
@@ -360,7 +360,7 @@ export function applyPhaserDamage(
             (target as Player).ship!.damage += ihita;                 // KSDAM += ihita
             (target as Player).ship!.energy = Math.max(
                 0,
-                (target as Player).ship!.energy - hita * Math.random()   // KSNRGY -= hita * RND()
+                (target as Player).ship!.energy - hita * ran()   // KSNRGY -= hita * RND()
             );
         } else {
             // Bases lose only 1% of the computed hit (DECWAR parity)
@@ -590,7 +590,7 @@ export function maybeApplyShipCriticalParity(
 
     // --- DECWAR crit threshold:
     // if (baseHita * (rand + 0.1)) < 1700 -> NO CRIT
-    const rana = Math.random();
+    const rana = ran();
     if (baseHita * (rana + 0.1) < 1700) {
         return { hita: Math.max(0, Math.round(baseHita)), critdv: -1, critdm: 0, droppedShields: false, isCrit: false };
     }
@@ -602,12 +602,12 @@ export function maybeApplyShipCriticalParity(
     if (deviceKeys.length === 0) {
         // still a crit, but no device to damage
         // jitter still applies because it's a crit
-        const jitter = Math.floor((Math.random() - 0.5) * 1000); // ±500 on crits only
+        const jitter = Math.floor((ran() - 0.5) * 1000); // ±500 on crits only
         hita = Math.max(0, hita + jitter);
         return { hita, critdv: -1, critdm: 0, droppedShields: false, isCrit: true };
     }
 
-    const critdv = Math.floor(Math.random() * deviceKeys.length);
+    const critdv = iran(deviceKeys.length);
     const device = deviceKeys[critdv];
 
     const critdm = Math.max(0, hita);
@@ -622,7 +622,7 @@ export function maybeApplyShipCriticalParity(
     }
 
     // DECWAR: add ±500 jitter on crits
-    const jitter = Math.floor((Math.random() - 0.5) * 1000);
+    const jitter = Math.floor((ran() - 0.5) * 1000);
     hita = Math.max(0, hita + jitter);
 
     return { hita, critdv, critdm, droppedShields, isCrit: true };
@@ -657,7 +657,7 @@ function applyInstallationPhaserToShip(opts: {
 
     // Small ship-only jitter in *user* units (±25)
     if ((target instanceof Player) && (target as Player).ship && hita > 0) {
-        const jitterUser = Math.floor((Math.random() - 0.5) * 50); // -25..+25
+        const jitterUser = Math.floor((ran() - 0.5) * 50); // -25..+25
         hita = Math.max(0, hita + jitterUser);
     }
 
@@ -685,10 +685,10 @@ export function planetPhaserDefense(triggeringPlayer: Player): void {
 
         if (!isRomulanMove) {
             if (!isEnemy && !isNeutral) continue;          // own side's planets do NOT activate
-            if (isNeutral && Math.random() < 0.5) continue; // 50% chance to skip neutrals
+            if (isNeutral && ran() < 0.5) continue; // 50% chance to skip neutrals
         } else {
             // Romulan activates both sides; neutrals still 50%
-            if (isNeutral && Math.random() < 0.5) continue;
+            if (isNeutral && ran() < 0.5) continue;
         }
 
         // Precompute phit from builds: (50 + 30*builds) / numply

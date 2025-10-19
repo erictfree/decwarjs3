@@ -1,5 +1,6 @@
 // src/dock.ts (or wherever this lives)
 import { Command } from "./command.js";
+import { ran } from "./util/random.js";
 import { Player } from "./player.js";
 import { putClientOnHold, sendMessageToClient, releaseClient } from "./communication.js";
 import { planets } from "./game.js";
@@ -64,7 +65,7 @@ export function dockCommand(player: Player, command: Command, done?: () => void)
 
     const statusArgs = showStatus ? command.args.slice(1).map((a) => a.toUpperCase()) : [];
 
-    const delayMs = DOCK_DELAY_MIN_MS + Math.random() * DOCK_DELAY_RANGE;
+    const delayMs = DOCK_DELAY_MIN_MS + ran() * DOCK_DELAY_RANGE;
     putClientOnHold(player, "Docking...");
 
     const timer = setTimeout(() => {

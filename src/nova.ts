@@ -202,7 +202,7 @@ export function triggerNovaAt(player: Player, v: number, h: number): void {
 
     let time = 300;
     for (const star of stars.slice()) {
-        if (isAdjacent(star.position, { v, h }) && Math.random() < 0.8) {
+        if (isAdjacent(star.position, { v, h }) && ran() < 0.8) {
             setTimeout(() => {
                 triggerNovaAt(player, star.position.v, star.position.h);
             }, time);
@@ -264,10 +264,10 @@ function applyNovaDamagePlanet(player: Player, planet: Planet, v: number, h: num
 
         const base = basesArray[baseIndex];
         const wasUndamaged = base.energy === 1000;
-        const damage = 300 + (Math.random() * 200 - 100);
+        const damage = 300 + (ran() * 200 - 100);
         base.energy = Math.max(0, base.energy - damage);
 
-        const ihita = damage * 8 + Math.random() * 1000;
+        const ihita = damage * 8 + ran() * 1000;
         if (player.ship.side !== side) {
             pointsManager.addDamageToBases(ihita, player, player.ship.side);
         } else {

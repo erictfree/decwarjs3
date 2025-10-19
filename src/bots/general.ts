@@ -5,6 +5,7 @@ import { Player } from "../player.js";
 import { NullSocket } from "../util/nullsocket.js";
 import { GRID_HEIGHT, GRID_WIDTH, MAX_SHIELD_ENERGY } from "../settings.js";
 import { players, bases } from "../game.js";
+import { ran, iran } from "../util/random.js";
 import { getAvailableShips } from "../pregame.js";
 import { Planet } from "../planet.js";
 import { chebyshev, findEmptyLocation } from "../coords.js";
@@ -41,7 +42,7 @@ export function isBotPlayer(p: Player): boolean {
     return /^BOT-/.test(n);
 }
 
-export function spawnSideBot(side: Side, name = `BOT-${side[0]}${Math.floor(Math.random() * 1000)}`): Player | null {
+export function spawnSideBot(side: Side, name = `BOT-${side[0]}${iran(1000)}`): Player | null {
     // Abort early if no ship names are available for this side.
     const available = getAvailableShips(side);
     if (available.length === 0) return null;
@@ -61,7 +62,7 @@ export function spawnSideBot(side: Side, name = `BOT-${side[0]}${Math.floor(Math
 
     // Assign a real, unused ship name, chosen at random from the available list.
     if (!pl.ship.name || /^NEUTRAL$/i.test(pl.ship.name)) {
-        const pick = available[Math.floor(Math.random() * available.length)];
+        const pick = available[iran(available.length)];
         pl.ship.name = pick;
     }
 
@@ -87,14 +88,14 @@ export function ensureBots(desiredTotal: number): void {
     // Try to spawn until we reach desiredTotal or run out of ship names.
     while (need > 0) {
         // Randomize selection order each pass.
-        const order: Side[] = Math.random() < 0.5 ? ["FEDERATION", "EMPIRE"] : ["EMPIRE", "FEDERATION"];
+        const order: Side[] = ran() < 0.5 ? ["FEDERATION", "EMPIRE"] : ["EMPIRE", "FEDERATION"];
         let spawned = false;
 
         for (const side of order) {
             // Skip if no ships left for this side.
             if (getAvailableShips(side).length === 0) continue;
 
-            const name = `BOT-${side[0]}${Math.floor(Math.random() * 10000)}`;
+            const name = `BOT-${side[0]}${iran(10000)}`;
             const p = spawnSideBot(side, name);
             if (p && p.ship) {
                 if (side === "FEDERATION") fed++; else emp++;
@@ -152,7 +153,7 @@ function driveBot(bot: Player): void {
 
     // Choose weapon (both paths emit real commands)
     if (phaReady && torpReady) {
-        if (Math.random() < FIRE_BIAS) firePhasers(bot, target);
+        if (ran() < FIRE_BIAS) firePhasers(bot, target);
         else fireTorpedo(bot, target);
     } else if (phaReady) {
         firePhasers(bot, target);
@@ -194,10 +195,10 @@ function maybeChatter(bot: Player): void {
     const now = Date.now();
     const notBefore = nextChatterAt.get(bot) ?? 0;
     // ~10% chance when allowed, then cooldown 8–15s
-    if (now < notBefore || Math.random() > 0.10) return;
+    if (now < notBefore || ran() > 0.10) return;
 
     // pick audience: 60% SIDE, 30% ALL, 10% single friendly ship
-    const roll = Math.random();
+    const roll = ran();
     let audience = "ALL";
     if (roll < 0.60) {
         audience = bot.ship.side; // tell your own side
@@ -212,7 +213,7 @@ function maybeChatter(bot: Player): void {
     // TELL <audience>; message
     queueCommands(bot, `TELL ${audience}; ${line}`);
     // set next window
-    nextChatterAt.set(bot, now + (8000 + Math.floor(Math.random() * 7000)));
+    nextChatterAt.set(bot, now + (8000 + iran(7000)));
 }
 
 function generateCaptainLine(bot: Player): string {
@@ -233,7 +234,7 @@ function generateCaptainLine(bot: Player): string {
         `All hands, stand by for maneuvers.`,
         `${name} on station at ${here}.`,
     ];
-    return setA[Math.floor(Math.random() * setA.length)];
+    return setA[iran(setA.length)];
 }
 
 // ===== Helper: clamp a relative vector to Chebyshev <= maxStep ==============
@@ -309,11 +310,11 @@ function randomWander(bot: Player): void {
     if (!bot.ship) return;
 
     // pick a random Chebyshev step size 1..MOVE_MAX_STEP and move in that square
-    const step = 1 + Math.floor(Math.random() * MOVE_MAX_STEP); // 1..5
+    const step = 1 + iran(MOVE_MAX_STEP); // 1..5
 
     // random offsets in [-step, step], with a non-zero displacement
-    let dv = Math.floor(Math.random() * (2 * step + 1)) - step;
-    let dh = Math.floor(Math.random() * (2 * step + 1)) - step;
+    let dv = iran(2 * step + 1) - step;
+    let dh = iran(2 * step + 1) - step;
     if (dv === 0 && dh === 0) dv = 1; // ensure some movement
 
     // clamp to board and re-derive the actually valid offsets
