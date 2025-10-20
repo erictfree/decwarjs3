@@ -21,15 +21,16 @@ export function startApiServer(provider: GameStateProvider, opts?: { port?: numb
     app.use(cors());
     app.use(express.json());
 
-    // Rate limit DTO endpoints to <= 4 requests / 5 seconds per client (with logs)
-    // Token bucket: rate = 0.8 tokens/sec, burst = 4
-    const dtoLimiter = dtoRateLimiter({ ratePerSec: 0.8, burst: 4, verbose: true });
+    // Strict sliding window limiter:
+    // <= 5 requests in any rolling 5-second period per client
+    const dtoLimiter = dtoRateLimiter({ max: 5, windowMs: 5000, verbose: true });
 
     // ---- basic state endpoints ----
     app.get("/api/health", (_req: Request, res: Response) => {
         res.json({ ok: true });
     });
 
+    // DTO endpoints (limited)
     app.get("/api/summary", dtoLimiter, (_req: Request, res: Response) => {
         res.json(provider.getSummary());
     });
@@ -58,14 +59,17 @@ export function startApiServer(provider: GameStateProvider, opts?: { port?: numb
      * LIVE EVENTS (SSE + snapshot)
      * ------------------------- */
 
-    // Mount the SSE router at /api so GET /api/events streams live events
-    app.use("/api", sseRouter);
+    // Events API (limited):
+    // - GET /api/events        (SSE stream)
+    // - GET /api/events/snapshot
+    // Apply limiter to the router so SSE connection attempts are limited too.
+    app.use("/api", dtoLimiter, sseRouter);
 
     // GET /api/events/snapshot
     //   ?types=phaser,torpedo            (optional filter)
     //   ?since=1234                      (optional catch-up id)
     //   ?page=1&pageSize=200             (optional pagination)
-    app.get("/api/events/snapshot", (req: Request, res: Response) => {
+    app.get("/api/events/snapshot", dtoLimiter, (req: Request, res: Response) => {
         const sinceRaw = req.query.since as string | undefined;
         const sinceNum = sinceRaw ? Number(sinceRaw) : undefined;
         const since = Number.isFinite(sinceNum!) ? (sinceNum as number) : undefined;
@@ -104,6 +108,6 @@ export function startApiServer(provider: GameStateProvider, opts?: { port?: numb
 
     const port = Number(process.env.API_PORT ?? opts?.port ?? 3001);
     return app.listen(port, () => {
-        console.log(`[api] listening on http://localhost:${port} (DTO RL: 4 req / 5s)`);
+        console.log(`[api] listening on http://localhost:${port} (DTO RL: ≤5 req / 5s, sliding)`);
     });
 }
