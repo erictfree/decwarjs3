@@ -84,8 +84,12 @@ export function phaserCommand(player: Player, command: Command): void {
     energy = Math.min(Math.max(energy, 50), 500);
 
     const shieldPenalty = player.ship.shieldsUp ? 200 : 0;
-    if (shieldPenalty > 0 && player.settings.output === "LONG") {
-        sendMessageToClient(player, "High speed shield control activated.");
+    if (shieldPenalty > 0) {
+        switch (player.settings.output) {
+            case "SHORT": sendMessageToClient(player, "HS shield control."); break;
+            case "MEDIUM": sendMessageToClient(player, "High-speed shield control."); break;
+            case "LONG": sendMessageToClient(player, "High speed shield control activated."); break;
+        }
     }
 
     // Pre-check against actual energy model (player units): cost = phit + shieldPenalty
@@ -134,6 +138,18 @@ export function phaserCommand(player: Player, command: Command): void {
 
     // PHADAM parity: range & device effects applied inside core; pass requested energy.
     const result = applyPhaserDamage(player, target, energy);
+
+    // --- bank cooldown + overheating (DECWAR-style) -----------------------
+    // Cool down the **bank we just used**:
+    // 3–6 seconds + (phaser device damage / 100) seconds.
+    {
+        const phaserDamage = Math.max(0, (player.ship.devices?.phaser ?? 0));
+        const cooldownMs = computePhaserCooldownMs(phaserDamage);
+        player.ship.cooldowns.phasersAvailableAt[bankIndex] = now + cooldownMs;
+    }
+
+    // Chance to overheat/damage own phasers based on shot energy
+    maybeOverheatPhasers(player, energy);
 
     if (result.checkEndGame) checkEndGame();
 }
@@ -519,6 +535,54 @@ export function applyPhaserDamage(
 // ----- FORTRAN-style helpers -----
 const FINT = (x: number) => (x >= 0 ? Math.floor(x) : Math.ceil(x)); // FORTRAN INT
 const CLAMP = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+
+// Bank cooldown helper:
+// 3–6 seconds (uniform integer) + (phaser damage / 100) seconds.
+function computePhaserCooldownMs(phaserDamage: number): number {
+    const baseSeconds = 3 + Math.floor(ran() * 4); // 3,4,5,6
+    const extra = Math.max(0, phaserDamage) / 100.0;
+    return Math.floor((baseSeconds + extra) * 1000);
+}
+
+// Overheating model:
+// ~5% fail chance at 200 energy, ~65% near 500 energy. Severity scales with energy.
+function maybeOverheatPhasers(player: Player, energy: number): void {
+    if (!player.ship?.isDeviceOperational("phaser")) return;
+    const e = Math.max(50, Math.min(500, Math.floor(energy)));
+    // Linear ramp: 200 → 5%, 500 → 65% (clamped on low end)
+    let p = 0.05 + ((e - 200) * (0.65 - 0.05)) / 300; // can go below 0.05 if e<200
+    p = Math.max(0.005, Math.min(0.80, p));
+
+    // Slightly more likely when already damaged
+    const dmg = Math.max(0, player.ship.devices?.phaser ?? 0);
+    p *= 1 + Math.min(0.5, dmg / 2000); // up to +50% at very high damage
+
+    if (ran() >= p) return;
+
+    // Severity ~ energy with a little jitter (user-visible device units)
+    const add = Math.max(1, Math.round(e * (0.35 + ran() * 0.65))); // ~0.35e..1.0e
+    player.ship.devices.phaser = (player.ship.devices.phaser ?? 0) + add;
+
+    // Messaging: warning vs. critical
+    const total = player.ship.devices.phaser;
+    if (total >= 400) {
+        // mirrors classic "critically damaged" vibe
+        sendMessageToClient(player, "Phasers critically damaged.");
+    } else {
+        switch (player.settings.output) {
+            case "SHORT":
+                sendMessageToClient(player, "OVERHEAT: PHASERS.");
+                break;
+            case "MEDIUM":
+                sendMessageToClient(player, "WARNING! Phasers overheating.");
+                break;
+            case "LONG":
+            default:
+                sendMessageToClient(player, "WARNING! WARNING! PHASERS OVERHEATING.");
+                break;
+        }
+    }
+}
 
 /**
  * PHADAM-parity core: shield absorption + shield drain + final damage.

@@ -162,6 +162,9 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
             planetPhaserDefense(ctx, { numply });        // PLNATK (planet auto-phasers)
             baseEnergyRegeneration(ctx, { numply, numsid }); // BASBLD (heal a little)
             // ======================================
+
+            // Log current game state
+            console.log(`TCM: Planets=${planets.length}, Bases: FED=${bases.federation.length}, EMP=${bases.empire.length}`);
         }
 
         // Romulan driver (spawn + behavior), gated at sweep boundary
