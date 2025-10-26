@@ -13,6 +13,7 @@ import { pointsCommand } from "./points.js";
 import { basphaFireOnce } from "./starbase_phasers.js";
 import { planetPhaserDefense } from "./phaser.js";
 import { baseEnergyRegeneration } from "./planet.js";
+import { autoRepairTick } from './repair.js';
 // DECWAR help text: ship destroyed at 2500 units of damage
 export const SHIP_FATAL_DAMAGE = 2500;
 import { romulanApproachTick } from "./romulan.js";
@@ -189,6 +190,13 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
     if (opts?.attributed && actor?.ship && !actor.ship.docked) {
         actor.updateLifeSupport();
     }
+
+    // FORTRAN parity: after every time-consuming move, apply automatic device repair to the mover.
+    // (Normal turn repair: 30 units per damaged device; silent; no time added.)
+    if (opts?.attributed && actor?.ship) {
+        autoRepairTick(actor);
+    }
+
     checkEndGame();
     tcmLastRun = Date.now();
     tcmRunning = false;

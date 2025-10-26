@@ -3166,6 +3166,9 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
             planetPhaserDefense(ctx, { numply });        // PLNATK (planet auto-phasers)
             baseEnergyRegeneration(ctx, { numply, numsid }); // BASBLD (heal a little)
             // ======================================
+
+            // Log current game state
+            console.log(`TCM: Planets=${planets.length}, Bases: FED=${bases.federation.length}, EMP=${bases.empire.length}`);
         }
 
         // Romulan driver (spawn + behavior), gated at sweep boundary
@@ -3190,6 +3193,7 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
     if (opts?.attributed && actor?.ship && !actor.ship.docked) {
         actor.updateLifeSupport();
     }
+    checkEndGame();
     tcmLastRun = Date.now();
     tcmRunning = false;
 }
@@ -3311,18 +3315,22 @@ export function checkEndGame(): void {
     // side's bases).  If so, the appropriate message is printed out
     // and the job is returned to monitor level.
 
+    //console.log("Checking for end game");
     if (settings.winner != null || !settings.generated) return;
 
-    const fedPlanetsExist = planets.some(p => p.side === "FEDERATION" && !p.isBase);
-    const empPlanetsExist = planets.some(p => p.side === "EMPIRE" && !p.isBase);
-
-    if (fedPlanetsExist || empPlanetsExist) {
+    // Check if any planets (excluding bases) still exist - game continues if so
+    const planetsExist = planets.some(p => !p.isBase);
+    if (planetsExist) {
+        console.log("Planets exist, game continues");
         return;
     }
 
     const fedBasesExist = bases.federation.length > 0;
     const empBasesExist = bases.empire.length > 0;
 
+    // console.log("Checking for bases");
+    // console.log("empBasesExist", empBasesExist);
+    // console.log("fedBasesExist", fedBasesExist);
     if (!empBasesExist && fedBasesExist) {
         settings.winner = "FEDERATION";
     } else if (!fedBasesExist && empBasesExist) {
@@ -3332,7 +3340,7 @@ export function checkEndGame(): void {
     } else {
         return;
     }
-    console.log(settings.winner);
+    //console.log(settings.winner);
 
     let message = ``;
     if (settings.winner) {
@@ -3719,19 +3727,19 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         let allPlanets: Planet[] = [];
         const outputLines: string[] = [];
 
-        if (clause.rangeFilters.length > 0) {
-            const numericRanges = clause.rangeFilters.filter(r => typeof r === "number") as number[];
-            if (numericRanges.length > 0) {
-                range = Math.max(...numericRanges);
-                explicitRange = true;
-            }
-            if (clause.rangeFilters.includes("ALL")) { //needed?
-                range = Infinity;
-            }
-        }
+        // Determine range per DECWAR semantics:
+        // - If a numeric radius is provided, use it (explicitRange = true).
+        // - Otherwise, SUMMARY, CLOSEST, or ALL imply infinite radius.
+        const hasAll = clause.rangeFilters.includes("ALL");
+        const hasClosest = clause.rangeFilters.includes("CLOSEST");
+        const hasSummary = clause.modes.includes("SUMMARY");
 
-        if (!explicitRange) {
-            clause.rangeFilters.push("ALL");
+        const numericRanges = clause.rangeFilters.filter(r => typeof r === "number") as number[];
+        if (numericRanges.length > 0) {
+            range = Math.max(...numericRanges);
+            explicitRange = true;
+        }
+        if (!explicitRange && (hasAll || hasClosest || hasSummary)) {
             range = Infinity;
         }
 
@@ -3794,11 +3802,11 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
             }
         }
 
-        // filter by range
+        // filter by range (collection stage)
         if (range !== Infinity) {
-            allShips = allShips.filter(ship => chebyshev(ship.position, ship.position) <= range);
-            allBases = allBases.filter(base => chebyshev(ship.position, base.position) <= range);
-            allPlanets = allPlanets.filter(planet => chebyshev(ship.position, planet.position) <= range);
+            allShips = allShips.filter(s => chebyshev(ship.position, s.position) <= range);
+            allBases = allBases.filter(b => chebyshev(ship.position, b.position) <= range);
+            allPlanets = allPlanets.filter(p => chebyshev(ship.position, p.position) <= range);
         }
 
         // filter by location
@@ -3826,6 +3834,9 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         const summarize = clause.modes.includes("SUMMARY");
+        const viewRadius = range === Infinity ? Number.POSITIVE_INFINITY : range;
+        // SUMMARY/CLOSEST/ALL behave like an explicit wide query; show coords even if normally "out of range".
+        const bypassMemory = explicitRange || hasAll || hasClosest || hasSummary;
 
         // Show full object listings (as in 2.2 LIST default)
         const finalShips = [];
@@ -3836,7 +3847,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         const qualifier = explicitRange ? "in specified range" : "in game";
 
         for (const ship of allShips) {
-            const line = formatShipLine(ship, outputMode, player);
+            const line = formatShipLine(ship, outputMode, player, viewRadius, bypassMemory);
             if (line) {
                 if (!onlySummarize) {
                     outputLines.push(line);
@@ -3863,7 +3874,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         for (const base of allBases) {
-            const line = formatBaseLine(base, outputMode, player);
+            const line = formatBaseLine(base, outputMode, player, viewRadius, bypassMemory);
             if (line) {
                 if (!onlySummarize) {
                     outputLines.push(line);
@@ -3890,7 +3901,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         for (const planet of allPlanets) {
-            const line = formatPlanetLine(planet, outputMode, player);
+            const line = formatPlanetLine(planet, outputMode, player, viewRadius, bypassMemory);
             if (line) {
                 if (!onlySummarize) {
                     outputLines.push(line);
@@ -3929,7 +3940,13 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
 
 }
 
-function formatShipLine(ship: Ship, mode: OutputSetting, viewer: Player): string | null {
+function formatShipLine(
+    ship: Ship,
+    mode: OutputSetting,
+    viewer: Player,
+    viewRadius: number = DEFAULT_SCAN_RANGE,
+    bypassMemory: boolean = false
+): string | null {
     if (ship.romulanStatus.isRomulan && ship.romulanStatus.cloaked) {
         return null;
     }
@@ -3937,10 +3954,9 @@ function formatShipLine(ship: Ship, mode: OutputSetting, viewer: Player): string
         return null;
     }
 
-    let isOutOfRange = false;
     const distance = chebyshev(ship.position, viewer.ship.position);
-
-    if (distance > DEFAULT_SCAN_RANGE && ship.side !== viewer.ship.side) isOutOfRange = true;
+    const isEnemy = ship.side !== viewer.ship.side;
+    const isOutOfRange = isEnemy && distance > viewRadius;
     //const { v, h } = ship.position;
     const flag = (ship.side !== viewer.ship.side) ? "*" : " ";
 
@@ -3965,7 +3981,12 @@ function formatShipLine(ship: Ship, mode: OutputSetting, viewer: Player): string
             coord = `@${coord}`;
         }
     } else {
-        shieldDisplay = '';
+        // If caller asked for extended list (ALL / explicit radius), still show coords
+        if (bypassMemory) {
+            coord = `${formatCoordsForPlayer2(ship.position.v, ship.position.h, viewer)}`;
+        } else {
+            shieldDisplay = '';
+        }
     }
 
     if (mode === "SHORT" || mode === "MEDIUM") {
@@ -3975,12 +3996,18 @@ function formatShipLine(ship: Ship, mode: OutputSetting, viewer: Player): string
     }
 }
 
-function formatBaseLine(base: Planet, mode: OutputSetting, viewer: Player): string | null {
+function formatBaseLine(
+    base: Planet,
+    mode: OutputSetting,
+    viewer: Player,
+    viewRadius: number = DEFAULT_SCAN_RANGE,
+    bypassMemory: boolean = false
+): string | null {
     if (!viewer.ship) {
         return null;
     }
-    const distance = chebyshev(viewer.ship.position, viewer.ship.position);
-    if (distance > DEFAULT_SCAN_RANGE && base.side !== viewer.ship.side) {
+    const distance = chebyshev(base.position, viewer.ship.position);
+    if (distance > viewRadius && base.side !== viewer.ship.side && !bypassMemory) {
         const memory = viewer.ship.side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
         if (!memory.has(`${base.position.v},${base.position.h}`)) {
             return null;
@@ -4013,12 +4040,18 @@ function formatBaseLine(base: Planet, mode: OutputSetting, viewer: Player): stri
     }
 }
 
-function formatPlanetLine(planet: Planet, mode: OutputSetting, viewer: Player): string | null {
+function formatPlanetLine(
+    planet: Planet,
+    mode: OutputSetting,
+    viewer: Player,
+    viewRadius: number = DEFAULT_SCAN_RANGE,
+    bypassMemory: boolean = false
+): string | null {
     if (!viewer.ship) {
         return null;
     }
     const distance = chebyshev(planet.position, viewer.ship.position);
-    if (distance > DEFAULT_SCAN_RANGE) {
+    if (distance > viewRadius && !bypassMemory) {
         const memory = viewer.ship.side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
         if (!memory.has(`${planet.position.v},${planet.position.h}`)) {
             return null;
@@ -5298,8 +5331,12 @@ export function phaserCommand(player: Player, command: Command): void {
     energy = Math.min(Math.max(energy, 50), 500);
 
     const shieldPenalty = player.ship.shieldsUp ? 200 : 0;
-    if (shieldPenalty > 0 && player.settings.output === "LONG") {
-        sendMessageToClient(player, "High speed shield control activated.");
+    if (shieldPenalty > 0) {
+        switch (player.settings.output) {
+            case "SHORT": sendMessageToClient(player, "HS shield control."); break;
+            case "MEDIUM": sendMessageToClient(player, "High-speed shield control."); break;
+            case "LONG": sendMessageToClient(player, "High speed shield control activated."); break;
+        }
     }
 
     // Pre-check against actual energy model (player units): cost = phit + shieldPenalty
@@ -5348,6 +5385,18 @@ export function phaserCommand(player: Player, command: Command): void {
 
     // PHADAM parity: range & device effects applied inside core; pass requested energy.
     const result = applyPhaserDamage(player, target, energy);
+
+    // --- bank cooldown + overheating (DECWAR-style) -----------------------
+    // Cool down the **bank we just used**:
+    // 3–6 seconds + (phaser device damage / 100) seconds.
+    {
+        const phaserDamage = Math.max(0, (player.ship.devices?.phaser ?? 0));
+        const cooldownMs = computePhaserCooldownMs(phaserDamage);
+        player.ship.cooldowns.phasersAvailableAt[bankIndex] = now + cooldownMs;
+    }
+
+    // Chance to overheat/damage own phasers based on shot energy
+    maybeOverheatPhasers(player, energy);
 
     if (result.checkEndGame) checkEndGame();
 }
@@ -5733,6 +5782,54 @@ export function applyPhaserDamage(
 // ----- FORTRAN-style helpers -----
 const FINT = (x: number) => (x >= 0 ? Math.floor(x) : Math.ceil(x)); // FORTRAN INT
 const CLAMP = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+
+// Bank cooldown helper:
+// 3–6 seconds (uniform integer) + (phaser damage / 100) seconds.
+function computePhaserCooldownMs(phaserDamage: number): number {
+    const baseSeconds = 3 + Math.floor(ran() * 4); // 3,4,5,6
+    const extra = Math.max(0, phaserDamage) / 100.0;
+    return Math.floor((baseSeconds + extra) * 1000);
+}
+
+// Overheating model:
+// ~5% fail chance at 200 energy, ~65% near 500 energy. Severity scales with energy.
+function maybeOverheatPhasers(player: Player, energy: number): void {
+    if (!player.ship?.isDeviceOperational("phaser")) return;
+    const e = Math.max(50, Math.min(500, Math.floor(energy)));
+    // Linear ramp: 200 → 5%, 500 → 65% (clamped on low end)
+    let p = 0.05 + ((e - 200) * (0.65 - 0.05)) / 300; // can go below 0.05 if e<200
+    p = Math.max(0.005, Math.min(0.80, p));
+
+    // Slightly more likely when already damaged
+    const dmg = Math.max(0, player.ship.devices?.phaser ?? 0);
+    p *= 1 + Math.min(0.5, dmg / 2000); // up to +50% at very high damage
+
+    if (ran() >= p) return;
+
+    // Severity ~ energy with a little jitter (user-visible device units)
+    const add = Math.max(1, Math.round(e * (0.35 + ran() * 0.65))); // ~0.35e..1.0e
+    player.ship.devices.phaser = (player.ship.devices.phaser ?? 0) + add;
+
+    // Messaging: warning vs. critical
+    const total = player.ship.devices.phaser;
+    if (total >= 400) {
+        // mirrors classic "critically damaged" vibe
+        sendMessageToClient(player, "Phasers critically damaged.");
+    } else {
+        switch (player.settings.output) {
+            case "SHORT":
+                sendMessageToClient(player, "OVERHEAT: PHASERS.");
+                break;
+            case "MEDIUM":
+                sendMessageToClient(player, "WARNING! Phasers overheating.");
+                break;
+            case "LONG":
+            default:
+                sendMessageToClient(player, "WARNING! WARNING! PHASERS OVERHEATING.");
+                break;
+        }
+    }
+}
 
 /**
  * PHADAM-parity core: shield absorption + shield drain + final damage.
@@ -10087,7 +10184,7 @@ export function formatDuration(totalSeconds: number): string {
 import { Player } from './player.js';
 import { ran } from './util/random.js';
 import { Command } from './command.js';
-import { pointsManager, SHIP_FATAL_DAMAGE } from './game.js';
+import { pointsManager, SHIP_FATAL_DAMAGE, players, bases, planets, stars, blackholes, removePlayerFromGame, checkEndGame } from './game.js';
 import {
     addPendingMessage,
     putClientOnHold,
@@ -10105,14 +10202,13 @@ import {
 } from './settings.js';
 import { Planet } from './planet.js';
 import { isInBounds, bresenhamLine, chebyshev, ocdefCoords } from './coords.js';
-import { players, bases, planets, stars, blackholes, removePlayerFromGame, checkEndGame } from './game.js';
 import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
 import { triggerNovaAt } from './nova.js';
 import { Star } from './star.js';
 import { Blackhole } from './blackhole.js';
 import { maybeApplyShipCriticalParity } from './phaser.js';
 import { Side } from './settings.js';
-import { gameEvents, planetRef } from './api/events.js';
+import { gameEvents } from './api/events.js';
 import {
     emitShipDestroyed,
     attackerRef,
@@ -10129,6 +10225,7 @@ type ScoringAPI = {
     addDamageToBases?(amount: number, source: Player, side: Side): void;
     addEnemiesDestroyed?(count: number, source: Player, side: Side): void;
     addDamageToEnemies?(amount: number, source: Player, side: Side): void;
+    addPlanetsDestroyed?(points: number, source: Player, side: Side): void;
 };
 
 
@@ -10145,6 +10242,11 @@ type Point = { v: number; h: number };
 
 // Single source of truth for torpedo hull scaling (DECWAR vibe ≈ ×0.1)
 const TORP_HULL_SCALE = 0.1;
+
+// Default to LONG if not explicitly set
+function getOutputSetting(p: Player): OutputSetting {
+    return (p.settings.output ?? "LONG") as OutputSetting;
+}
 
 function formatTorpedoShipHit(opts: {
     attackerInitial: string;
@@ -10173,7 +10275,7 @@ function formatTorpedoShipHit(opts: {
     switch (output) {
         case "LONG":
             // Full DECWAR-style with before% and arrow if deflected
-            return `${attackerInitial}> ${targetInitial} @${atkPos.v}-${atkPos.h} ${offset}, +${beforePct}% ${damageUnits.toFixed(1)} unit T ${targetInitial} ${arrow} ${sign}${deltaPct}%${critDeviceName ? `; ${critDeviceName} dam ${Math.round(damageUnits)}` : ""}`;
+            return `${attackerInitial}> ${targetInitial} @${atkPos.v}-${atkPos.h} ${offset}, +${beforePct}% ${damageUnits.toFixed(1)} unit T ${targetInitial} ${arrow} ${sign}${deltaPct}%${critTextLong}`;
         case "MEDIUM":
             // Keep coords and core numbers, drop some words
             return `${attackerInitial}> ${targetInitial} @${atkPos.v}-${atkPos.h} ${damageUnits.toFixed(1)}T ${sign}${deltaPct}%${critTextMed}`;
@@ -10534,11 +10636,6 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 const afterPct = Math.round((Math.max(0, vic.shieldEnergy) / Math.max(1, MAX_SHIELD_ENERGY)) * 1000) / 10;
                 const deltaPct = Math.round((afterPct - beforePct) * 10) / 10; // likely negative
                 const dmg = Math.round((res.hita + Number.EPSILON) * 10) / 10; // one decimal
-                const atCoords = `${atk.position.v}-${atk.position.h}`;
-                const arrow = res.deflected && res.deflectTo ? ` -->${res.deflectTo.v}-${res.deflectTo.h},` : "";
-                const critText = res.critdm
-                    ? `; ${res.critDeviceName ?? "Device"} dam ${res.critdm}`
-                    : "";
 
                 const line = formatTorpedoShipHit({
                     attackerInitial,
@@ -10551,7 +10648,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                     deflectTo: res.deflectTo ?? null,
                     deltaPct,
                     critDeviceName: res.critDeviceName,
-                    output: player.settings.output
+                    output: getOutputSetting(player)
                 });
                 sendMessageToClient(player, line);
 
@@ -10603,60 +10700,40 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 emitPlanetHit(p, "torpedo", res.hita, res.isDestroyed, player);
 
                 const coords = ocdefCoords(player.settings.ocdef, player.ship.position, p.position);
+                const out = getOutputSetting(player);
                 if (res.isDestroyed) {
-                    // destruction messaging independent of current p.isBase (it may already be flipped inside torpedoDamage)
-                    sendMessageToClient(
-                        player,
-                        wasBase
-                            ? `Torpedo destroyed the base @${coords}!`
-                            : `Torpedo destroyed the captured planet @${coords}!`
-                    );
+                    // destruction messaging independent of current p.isBase (it may already be flipped)
+                    sendMessageToClient(player, formatPlanetDestroyed(out, wasBase, coords));
                     checkEndGame();
                 } else if (wasBase) {
                     // base was hit but survived this shot
-                    sendMessageToClient(
-                        player,
-                        `Torpedo ${res.hita > 0 ? `hit base @${coords} for ${Math.round(res.hita)} damage` : `was deflected @${coords}`}${res.critdm ? " (CRIT)" : ""}.`
-                    );
+                    sendMessageToClient(player, formatBaseHit(out, coords, res.hita, !!res.critdm));
                 } else {
                     // Non-base planet (FORTRAN parity):
                     // 25% chance -> decrement builds; if builds < 0 after the hit, the planet is destroyed
                     if (ran() >= 0.75) {
-                        // allow negative so we can detect destruction when starting at 0
-                        p.builds = p.builds - 1;
+                        p.builds = p.builds - 1; // allow negative so we can detect destruction when starting at 0
 
                         if (p.builds < 0) {
-                            // scoring: shooter penalized −1000 for destroying a planet
-                            pointsManager.addPlanetsDestroyed(-1000, player, player.ship.side);
+                            pointsManager.addPlanetsDestroyed(-1000, player, player.ship.side); // −1000 penalty
 
-                            // remove planet from world state
                             const planetIdx = planets.indexOf(p);
                             if (planetIdx !== -1) planets.splice(planetIdx, 1);
 
-                            // also remove from base list if somehow registered there (safety)
                             const ownerBases = p.side === "FEDERATION" ? bases.federation : bases.empire;
                             const bIdx = ownerBases.indexOf(p);
                             if (bIdx !== -1) ownerBases.splice(bIdx, 1);
                             p.isBase = false;
 
-                            // notify / housekeeping
-                            gameEvents.emit({
-                                type: "planet_hit",
-                                payload: {
-                                    planet: { name: p.name, side: p.side, position: { ...p.position } },
-                                    damage: 0,
-                                    destroyed: true,
-                                    by: { shipName: player.ship.name, side: player.ship.side },
-                                },
-                            });
-                            sendMessageToClient(player, `Torpedo destroyed the planet @${coords}! (−1000)`);
+                            emitPlanetHit(p, "torpedo", 0, /*destroyed*/ true, player);
+                            sendMessageToClient(player, formatPlanetDestroyed(out, /*wasBase*/ false, coords, /*planetPenalty*/ true));
                             checkEndGame();
                             break;
                         } else {
-                            sendMessageToClient(player, `Torpedo impact on planet @${coords} disrupted infrastructure (−1 builds).`);
+                            sendMessageToClient(player, formatPlanetInfra(out, coords));
                         }
                     } else {
-                        sendMessageToClient(player, `Torpedo impact on planet @${coords} had no significant effect.`);
+                        sendMessageToClient(player, formatPlanetNoEffect(out, coords));
                     }
                 }
                 break;
@@ -10794,7 +10871,8 @@ function repeatOrTrim<T>(items: T[], n: number): T[] {
 function formatTorpedoOutOfRange(player: Player, v: number, h: number): string {
     const coords = ocdefCoords(player.settings.ocdef, player.ship?.position ?? { v: 0, h: 0 }, { v, h });
 
-    switch (player.settings.output) {
+    const output = getOutputSetting(player);
+    switch (output) {
         case "SHORT":
             return `F > ${coords} No impact`;
         case "MEDIUM":
@@ -10807,7 +10885,8 @@ function formatTorpedoOutOfRange(player: Player, v: number, h: number): string {
 function formatTorpedoLostInVoid(player: Player, v: number, h: number): string {
     const coords = ocdefCoords(player.settings.ocdef, player.ship?.position ?? { v: 0, h: 0 }, { v, h });
 
-    switch (player.settings.output) {
+    const output = getOutputSetting(player);
+    switch (output) {
         case "SHORT":
             return `F > ${coords} Vanished`;
         case "MEDIUM":
@@ -10821,7 +10900,8 @@ function formatTorpedoLostInVoid(player: Player, v: number, h: number): string {
 function formatTorpedoExplosion(player: Player, v: number, h: number): string {
     const coords = ocdefCoords(player.settings.ocdef, player.ship?.position ?? { v: 0, h: 0 }, { v, h });
 
-    switch (player.settings.output) {
+    const output = getOutputSetting(player);
+    switch (output) {
         case "SHORT":
             return `F > ${coords} BOOM`;
         case "MEDIUM":
@@ -10835,7 +10915,8 @@ function formatTorpedoExplosion(player: Player, v: number, h: number): string {
 
 function formatTorpedoBroadcast(player: Player, v: number, h: number): string {
     const coords = ocdefCoords(player.settings.ocdef, player.ship?.position ?? { v: 0, h: 0 }, { v, h });
-    switch (player.settings.output) {
+    const output = getOutputSetting(player);
+    switch (output) {
         case "SHORT":
             return `F > ${coords} `;
         case "MEDIUM":
@@ -10845,6 +10926,61 @@ function formatTorpedoBroadcast(player: Player, v: number, h: number): string {
             return `${player.ship?.name ?? "Unknown"} has launched a torpedo toward ${coords}.`;
     }
 }
+
+// ---------------- Planet/Base impact formatters honoring OutputSetting -----
+function formatPlanetNoEffect(output: OutputSetting, coords: string): string {
+    switch (output) {
+        case "SHORT": return `F > ${coords} no effect`;
+        case "MEDIUM": return `Torpedo impact at ${coords} had no significant effect.`;
+        case "LONG":
+        default: return `Torpedo impact on planet @${coords} had no significant effect.`;
+    }
+}
+
+function formatPlanetInfra(output: OutputSetting, coords: string): string {
+    switch (output) {
+        case "SHORT": return `F > ${coords} infra −1`;
+        case "MEDIUM": return `Infrastructure disrupted at ${coords} (−1 builds).`;
+        case "LONG":
+        default: return `Torpedo impact on planet @${coords} disrupted infrastructure (−1 builds).`;
+    }
+}
+
+function formatPlanetDestroyed(output: OutputSetting, wasBase: boolean, coords: string, penalized = false): string {
+    if (wasBase) {
+        switch (output) {
+            case "SHORT": return `F > ${coords} BASE DESTROYED`;
+            case "MEDIUM": return `Base destroyed @${coords}!`;
+            case "LONG":
+            default: return `Torpedo destroyed the base @${coords}!`;
+        }
+    } else {
+        switch (output) {
+            case "SHORT": return `F > ${coords} PLANET DESTROYED${penalized ? " (−1000)" : ""}`;
+            case "MEDIUM": return `Planet destroyed @${coords}!${penalized ? " (−1000)" : ""}`;
+            case "LONG":
+            default: return `Torpedo destroyed the planet @${coords}!${penalized ? " (−1000)" : ""}`;
+        }
+    }
+}
+
+function formatBaseHit(output: OutputSetting, coords: string, dmg: number, crit: boolean): string {
+    const d = Math.round(dmg);
+    switch (output) {
+        case "SHORT":
+            return `F > ${coords} ${d > 0 ? `B −${d}` : `DEFLECT`}${crit ? " CRIT" : ""}`;
+        case "MEDIUM":
+            return d > 0
+                ? `Base hit @${coords} for ${d}${crit ? " (CRIT)" : ""}.`
+                : `Torpedo was deflected @${coords}${crit ? " (CRIT)" : ""}.`;
+        case "LONG":
+        default:
+            return d > 0
+                ? `Torpedo hit base @${coords} for ${d} damage${crit ? " (CRIT)" : ""}.`
+                : `Torpedo was deflected @${coords}${crit ? " (CRIT)" : ""}.`;
+    }
+}
+// --------------------------------------------------------------------------
 
 // (no flat crit chance; we use thresholded crits in maybeApplyShipCriticalParity)
 // Torpedo damage (TORDAM entry point) — parity-focused
@@ -10972,7 +11108,6 @@ export function torpedoDamage(
                 const sign = atkSide !== tgtSide ? 1 : -1;
 
                 (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, source, atkSide);
-                (pointsManager as unknown as ScoringAPI).addEnemiesDestroyed?.(1, source, atkSide);
             }
 
             // --- base removal / collapse (single emit) ---
@@ -11090,7 +11225,6 @@ export function torpedoDamage(
         } else if (isBase) {
             const sign = atkSide !== (target as Planet).side ? 1 : -1;
             (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, source, atkSide);
-            (pointsManager as unknown as ScoringAPI).addEnemiesDestroyed?.(1, source, atkSide);
         }
     }
 
@@ -11196,30 +11330,28 @@ export function applyDamage(
         if (target.energy <= 0) {
             isDestroyed = true;
 
-            // capture before mutation
+            // capture before removal
             const prevSide = target.side;
 
+            // remove from owner's base list
             const arr = prevSide === "FEDERATION" ? bases.federation : bases.empire;
             const idx = arr.indexOf(target);
             if (idx !== -1) arr.splice(idx, 1);
 
-            // mutate the planet
-            target.isBase = false;
-            target.energy = 0;
-            target.builds = 0;
-            // NOTE: Fortran semantics usually keep side until later recapture; 
-            // if you demote to neutral immediately, do it explicitly here:
-            // target.side = "NEUTRAL";
+            // remove from global planets (no demotion)
+            const pidx = planets.indexOf(target);
+            if (pidx !== -1) planets.splice(pidx, 1);
 
+            // undock ships that were using this port (BASKIL parity)
             handleUndockForAllShipsAfterPortDestruction(target);
 
-            // emit with the captured previous side
+            // emit with captured previous side
             gameEvents.emit({
                 type: "planet_base_removed",
                 payload: {
                     planet: {
                         name: target.name,
-                        previousSide: prevSide,               // <-- fix
+                        previousSide: prevSide,
                         position: { ...target.position }
                     },
                     reason: "collapse_torpedo"
@@ -11411,20 +11543,19 @@ export function removeAllPlanetsAndBasesFromSide(side: Side): void {
     // bases.federation.length = 0;
     // bases.empire.length = 0;
 
+
+    // Remove all planets on the specified side and all neutral planets
+    for (let i = planets.length - 1; i >= 0; i--) {
+        const planet = planets[i];
+        if (planet.side === side || planet.side === "NEUTRAL") {
+            planets.splice(i, 1);
+        }
+    }
+
     if (sideKey && bases[sideKey]) {
         bases[sideKey].length = 0;
     }
 
-    // Remove all planets on the opposite side
-    const oppositeSide = side === "FEDERATION" ? "EMPIRE" : side === "EMPIRE" ? "FEDERATION" : null;
-
-    if (oppositeSide) {
-        for (let i = planets.length - 1; i >= 0; i--) {
-            if (planets[i].side === oppositeSide && !planets[i].isBase) {
-                planets.splice(i, 1);
-            }
-        }
-    }
 }
 
 ######## type.ts

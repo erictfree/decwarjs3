@@ -113,3 +113,25 @@ export function repairCommand(player: Player, command: Command, done?: () => voi
         sendMessageToClient(player, `Beginning repair of ${repairAmount} units... (${delaySeconds.toFixed(1)}s)`);
     }
 }
+
+/**
+ * Auto-repair that runs after every time-consuming move (FORTRAN REPAIR with il=3).
+ * Silently subtracts the normal per-turn repair from EACH damaged device.
+ * Note: FORTRAN repsiz=300 corresponds to 30 real units; we use 30 here.
+ * Docking does NOT accelerate this path (il==3 is not promoted to docked speed).
+ */
+export function autoRepairTick(player: Player): void {
+    if (!player.ship) return;
+    const NORMAL_TURN_REPAIR = 30; // DECWAR manual: "normal repair rate of 30 units per turn"
+    let any = false;
+    for (const [device, dmg] of Object.entries(player.ship.devices)) {
+        const cur = typeof dmg === "number" ? dmg : 0;
+        if (cur > 0) {
+            const newVal = Math.max(0, cur - NORMAL_TURN_REPAIR);
+            // @ts-expect-error: DeviceName index is valid at runtime
+            player.ship.devices[device] = newVal;
+            any = true;
+        }
+    }
+    // No messages and no pause (matches FORTRAN REPAIR il=3 behavior).
+}
