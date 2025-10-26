@@ -315,7 +315,7 @@ export function checkEndGame(): void {
     if (settings.winner != null || !settings.generated) return;
 
     // Check if any planets (excluding bases) still exist - game continues if so
-    // const planetsExist = planets.some(p => !p.isBase);
+    const planetsExist = planets.some(p => !p.isBase);
     if (planetsExist) {
         console.log("Planets exist, game continues");
         return;

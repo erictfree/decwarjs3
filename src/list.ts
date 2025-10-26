@@ -74,20 +74,19 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         let allPlanets: Planet[] = [];
         const outputLines: string[] = [];
 
-        if (clause.rangeFilters.length > 0) {
-            const numericRanges = clause.rangeFilters.filter(r => typeof r === "number") as number[];
-            if (numericRanges.length > 0) {
-                range = Math.max(...numericRanges);
-                explicitRange = true;
-            }
-            if (clause.rangeFilters.includes("ALL")) { //needed?
-                range = Infinity;
-            }
-        }
+        // Determine range per DECWAR semantics:
+        // - If a numeric radius is provided, use it (explicitRange = true).
+        // - Otherwise, SUMMARY, CLOSEST, or ALL imply infinite radius.
+        const hasAll = clause.rangeFilters.includes("ALL");
+        const hasClosest = clause.rangeFilters.includes("CLOSEST");
+        const hasSummary = clause.modes.includes("SUMMARY");
 
-        // If no explicit numeric radius and no CLOSEST, respect DEFAULT_SCAN_RANGE.
-        // Only force Infinity when the user actually asked for ALL.
-        if (!explicitRange && clause.rangeFilters.includes("ALL")) {
+        const numericRanges = clause.rangeFilters.filter(r => typeof r === "number") as number[];
+        if (numericRanges.length > 0) {
+            range = Math.max(...numericRanges);
+            explicitRange = true;
+        }
+        if (!explicitRange && (hasAll || hasClosest || hasSummary)) {
             range = Infinity;
         }
 
@@ -183,7 +182,8 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
 
         const summarize = clause.modes.includes("SUMMARY");
         const viewRadius = range === Infinity ? Number.POSITIVE_INFINITY : range;
-        const bypassMemory = explicitRange || clause.rangeFilters.includes("ALL");
+        // SUMMARY/CLOSEST/ALL behave like an explicit wide query; show coords even if normally "out of range".
+        const bypassMemory = explicitRange || hasAll || hasClosest || hasSummary;
 
         // Show full object listings (as in 2.2 LIST default)
         const finalShips = [];

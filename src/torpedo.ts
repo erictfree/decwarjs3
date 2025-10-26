@@ -60,6 +60,11 @@ type Point = { v: number; h: number };
 // Single source of truth for torpedo hull scaling (DECWAR vibe ≈ ×0.1)
 const TORP_HULL_SCALE = 0.1;
 
+// Default to LONG if not explicitly set
+function getOutputSetting(p: Player): OutputSetting {
+    return (p.settings.output ?? "LONG") as OutputSetting;
+}
+
 function formatTorpedoShipHit(opts: {
     attackerInitial: string;
     targetInitial: string;
@@ -460,7 +465,7 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                     deflectTo: res.deflectTo ?? null,
                     deltaPct,
                     critDeviceName: res.critDeviceName,
-                    output: player.settings.output
+                    output: getOutputSetting(player)
                 });
                 sendMessageToClient(player, line);
 
@@ -512,52 +517,40 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 emitPlanetHit(p, "torpedo", res.hita, res.isDestroyed, player);
 
                 const coords = ocdefCoords(player.settings.ocdef, player.ship.position, p.position);
+                const out = getOutputSetting(player);
                 if (res.isDestroyed) {
-                    // destruction messaging independent of current p.isBase (it may already be flipped inside torpedoDamage)
-                    sendMessageToClient(
-                        player,
-                        wasBase
-                            ? `Torpedo destroyed the base @${coords}!`
-                            : `Torpedo destroyed the captured planet @${coords}!`
-                    );
+                    // destruction messaging independent of current p.isBase (it may already be flipped)
+                    sendMessageToClient(player, formatPlanetDestroyed(out, wasBase, coords));
                     checkEndGame();
                 } else if (wasBase) {
                     // base was hit but survived this shot
-                    sendMessageToClient(
-                        player,
-                        `Torpedo ${res.hita > 0 ? `hit base @${coords} for ${Math.round(res.hita)} damage` : `was deflected @${coords}`}${res.critdm ? " (CRIT)" : ""}.`
-                    );
+                    sendMessageToClient(player, formatBaseHit(out, coords, res.hita, !!res.critdm));
                 } else {
                     // Non-base planet (FORTRAN parity):
                     // 25% chance -> decrement builds; if builds < 0 after the hit, the planet is destroyed
                     if (ran() >= 0.75) {
-                        // allow negative so we can detect destruction when starting at 0
-                        p.builds = p.builds - 1;
+                        p.builds = p.builds - 1; // allow negative so we can detect destruction when starting at 0
 
                         if (p.builds < 0) {
-                            // scoring: shooter penalized −1000 for destroying a planet
-                            pointsManager.addPlanetsDestroyed(-1000, player, player.ship.side);
+                            pointsManager.addPlanetsDestroyed(-1000, player, player.ship.side); // −1000 penalty
 
-                            // remove planet from world state
                             const planetIdx = planets.indexOf(p);
                             if (planetIdx !== -1) planets.splice(planetIdx, 1);
 
-                            // also remove from base list if somehow registered there (safety)
                             const ownerBases = p.side === "FEDERATION" ? bases.federation : bases.empire;
                             const bIdx = ownerBases.indexOf(p);
                             if (bIdx !== -1) ownerBases.splice(bIdx, 1);
                             p.isBase = false;
 
-                            // single authoritative event
                             emitPlanetHit(p, "torpedo", 0, /*destroyed*/ true, player);
-                            sendMessageToClient(player, `Torpedo destroyed the planet @${coords}! (−1000)`);
+                            sendMessageToClient(player, formatPlanetDestroyed(out, /*wasBase*/ false, coords, /*planetPenalty*/ true));
                             checkEndGame();
                             break;
                         } else {
-                            sendMessageToClient(player, `Torpedo impact on planet @${coords} disrupted infrastructure (−1 builds).`);
+                            sendMessageToClient(player, formatPlanetInfra(out, coords));
                         }
                     } else {
-                        sendMessageToClient(player, `Torpedo impact on planet @${coords} had no significant effect.`);
+                        sendMessageToClient(player, formatPlanetNoEffect(out, coords));
                     }
                 }
                 break;
@@ -695,7 +688,8 @@ function repeatOrTrim<T>(items: T[], n: number): T[] {
 function formatTorpedoOutOfRange(player: Player, v: number, h: number): string {
     const coords = ocdefCoords(player.settings.ocdef, player.ship?.position ?? { v: 0, h: 0 }, { v, h });
 
-    switch (player.settings.output) {
+    const output = getOutputSetting(player);
+    switch (output) {
         case "SHORT":
             return `F > ${coords} No impact`;
         case "MEDIUM":
@@ -708,7 +702,8 @@ function formatTorpedoOutOfRange(player: Player, v: number, h: number): string {
 function formatTorpedoLostInVoid(player: Player, v: number, h: number): string {
     const coords = ocdefCoords(player.settings.ocdef, player.ship?.position ?? { v: 0, h: 0 }, { v, h });
 
-    switch (player.settings.output) {
+    const output = getOutputSetting(player);
+    switch (output) {
         case "SHORT":
             return `F > ${coords} Vanished`;
         case "MEDIUM":
@@ -722,7 +717,8 @@ function formatTorpedoLostInVoid(player: Player, v: number, h: number): string {
 function formatTorpedoExplosion(player: Player, v: number, h: number): string {
     const coords = ocdefCoords(player.settings.ocdef, player.ship?.position ?? { v: 0, h: 0 }, { v, h });
 
-    switch (player.settings.output) {
+    const output = getOutputSetting(player);
+    switch (output) {
         case "SHORT":
             return `F > ${coords} BOOM`;
         case "MEDIUM":
@@ -736,7 +732,8 @@ function formatTorpedoExplosion(player: Player, v: number, h: number): string {
 
 function formatTorpedoBroadcast(player: Player, v: number, h: number): string {
     const coords = ocdefCoords(player.settings.ocdef, player.ship?.position ?? { v: 0, h: 0 }, { v, h });
-    switch (player.settings.output) {
+    const output = getOutputSetting(player);
+    switch (output) {
         case "SHORT":
             return `F > ${coords} `;
         case "MEDIUM":
@@ -746,6 +743,61 @@ function formatTorpedoBroadcast(player: Player, v: number, h: number): string {
             return `${player.ship?.name ?? "Unknown"} has launched a torpedo toward ${coords}.`;
     }
 }
+
+// ---------------- Planet/Base impact formatters honoring OutputSetting -----
+function formatPlanetNoEffect(output: OutputSetting, coords: string): string {
+    switch (output) {
+        case "SHORT": return `F > ${coords} no effect`;
+        case "MEDIUM": return `Torpedo impact at ${coords} had no significant effect.`;
+        case "LONG":
+        default: return `Torpedo impact on planet @${coords} had no significant effect.`;
+    }
+}
+
+function formatPlanetInfra(output: OutputSetting, coords: string): string {
+    switch (output) {
+        case "SHORT": return `F > ${coords} infra −1`;
+        case "MEDIUM": return `Infrastructure disrupted at ${coords} (−1 builds).`;
+        case "LONG":
+        default: return `Torpedo impact on planet @${coords} disrupted infrastructure (−1 builds).`;
+    }
+}
+
+function formatPlanetDestroyed(output: OutputSetting, wasBase: boolean, coords: string, penalized = false): string {
+    if (wasBase) {
+        switch (output) {
+            case "SHORT": return `F > ${coords} BASE DESTROYED`;
+            case "MEDIUM": return `Base destroyed @${coords}!`;
+            case "LONG":
+            default: return `Torpedo destroyed the base @${coords}!`;
+        }
+    } else {
+        switch (output) {
+            case "SHORT": return `F > ${coords} PLANET DESTROYED${penalized ? " (−1000)" : ""}`;
+            case "MEDIUM": return `Planet destroyed @${coords}!${penalized ? " (−1000)" : ""}`;
+            case "LONG":
+            default: return `Torpedo destroyed the planet @${coords}!${penalized ? " (−1000)" : ""}`;
+        }
+    }
+}
+
+function formatBaseHit(output: OutputSetting, coords: string, dmg: number, crit: boolean): string {
+    const d = Math.round(dmg);
+    switch (output) {
+        case "SHORT":
+            return `F > ${coords} ${d > 0 ? `B −${d}` : `DEFLECT`}${crit ? " CRIT" : ""}`;
+        case "MEDIUM":
+            return d > 0
+                ? `Base hit @${coords} for ${d}${crit ? " (CRIT)" : ""}.`
+                : `Torpedo was deflected @${coords}${crit ? " (CRIT)" : ""}.`;
+        case "LONG":
+        default:
+            return d > 0
+                ? `Torpedo hit base @${coords} for ${d} damage${crit ? " (CRIT)" : ""}.`
+                : `Torpedo was deflected @${coords}${crit ? " (CRIT)" : ""}.`;
+    }
+}
+// --------------------------------------------------------------------------
 
 // (no flat crit chance; we use thresholded crits in maybeApplyShipCriticalParity)
 // Torpedo damage (TORDAM entry point) — parity-focused
