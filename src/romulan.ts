@@ -347,6 +347,8 @@ function fireRomulanTorpedoes(target: Target): void {
                     obj.builds = obj.builds - 1; // allow negative
 
                     if (obj.builds < 0) {
+                        // Credit the ROMULAN column with a destroyed planet (−100 to Romulan total).
+                        pointsManager.addPlanetsDestroyed(1, /*by*/ undefined, "ROMULAN");
                         // Remove planet
                         const pidx = planets.indexOf(obj);
                         if (pidx !== -1) planets.splice(pidx, 1);

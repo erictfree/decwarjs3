@@ -532,7 +532,8 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                         p.builds = p.builds - 1; // allow negative so we can detect destruction when starting at 0
 
                         if (p.builds < 0) {
-                            pointsManager.addPlanetsDestroyed(-1000, player, player.ship.side); // −1000 penalty
+                            // Record one planet destroyed; PointsManager applies −100 internally.
+                            pointsManager.addPlanetsDestroyed(1, player, player.ship.side);
 
                             const planetIdx = planets.indexOf(p);
                             if (planetIdx !== -1) planets.splice(planetIdx, 1);

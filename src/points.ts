@@ -176,20 +176,30 @@ export class PointsManager {
 
 
   // Nova star collapse counter; no points here (adjust if you want stars to grant points).
-  addStarsDestroyed(count: number, _by: Player | undefined, side: Side) {
-    if (!side || side === "NEUTRAL" || count === 0) return;
+  addStarsDestroyed(count: number, by: Player | undefined, side: Side) {
+    if (!side || side === "NEUTRAL") return;
+    if (count <= 0) return; // counts only (protect against passing -50 etc.)
     this.starsDestroyed[side] = (this.starsDestroyed[side] ?? 0) + count;
     this.categoryTotals[side].starsDestroyed += count;
+    // credit the player's raw bucket so BUZZARD column reflects it
+    if (by) {
+      by.points.starsDestroyed = (by.points.starsDestroyed ?? 0) + count;
+    }
     // FORTRAN: -50 per star destroyed
     const penalty = 50 * count;
     this.teamTotals[side] = (this.teamTotals[side] ?? 0) - penalty;
     this.turnTotals[side] = (this.turnTotals[side] ?? 0) - penalty;
   }
 
-  addPlanetsDestroyed(count: number, _by: Player | undefined, side: Side) {
-    if (!side || side === "NEUTRAL" || count === 0) return;
+  addPlanetsDestroyed(count: number, by: Player | undefined, side: Side) {
+    if (!side || side === "NEUTRAL") return;
+    if (count <= 0) return; // counts only (protect against passing -100 / -1000)
     this.planetsDestroyed[side] = (this.planetsDestroyed[side] ?? 0) + count;
     this.categoryTotals[side].planetsDestroyed += count;
+    // credit the player's raw bucket so BUZZARD column reflects it
+    if (by) {
+      by.points.planetsDestroyed = (by.points.planetsDestroyed ?? 0) + count;
+    }
     // FORTRAN: -100 per planet destroyed
     const penalty = 100 * count;
     this.teamTotals[side] = (this.teamTotals[side] ?? 0) - penalty;
