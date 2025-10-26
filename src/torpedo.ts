@@ -1,7 +1,7 @@
 import { Player } from './player.js';
 import { ran } from './util/random.js';
 import { Command } from './command.js';
-import { pointsManager, SHIP_FATAL_DAMAGE } from './game.js';
+import { pointsManager, SHIP_FATAL_DAMAGE, players, bases, planets, stars, blackholes, removePlayerFromGame, checkEndGame } from './game.js';
 import {
     addPendingMessage,
     putClientOnHold,
@@ -19,14 +19,13 @@ import {
 } from './settings.js';
 import { Planet } from './planet.js';
 import { isInBounds, bresenhamLine, chebyshev, ocdefCoords } from './coords.js';
-import { players, bases, planets, stars, blackholes, removePlayerFromGame, checkEndGame } from './game.js';
 import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
 import { triggerNovaAt } from './nova.js';
 import { Star } from './star.js';
 import { Blackhole } from './blackhole.js';
 import { maybeApplyShipCriticalParity } from './phaser.js';
 import { Side } from './settings.js';
-import { gameEvents, planetRef } from './api/events.js';
+import { gameEvents } from './api/events.js';
 import {
     emitShipDestroyed,
     attackerRef,
@@ -43,6 +42,7 @@ type ScoringAPI = {
     addDamageToBases?(amount: number, source: Player, side: Side): void;
     addEnemiesDestroyed?(count: number, source: Player, side: Side): void;
     addDamageToEnemies?(amount: number, source: Player, side: Side): void;
+    addPlanetsDestroyed?(points: number, source: Player, side: Side): void;
 };
 
 
@@ -87,7 +87,7 @@ function formatTorpedoShipHit(opts: {
     switch (output) {
         case "LONG":
             // Full DECWAR-style with before% and arrow if deflected
-            return `${attackerInitial}> ${targetInitial} @${atkPos.v}-${atkPos.h} ${offset}, +${beforePct}% ${damageUnits.toFixed(1)} unit T ${targetInitial} ${arrow} ${sign}${deltaPct}%${critDeviceName ? `; ${critDeviceName} dam ${Math.round(damageUnits)}` : ""}`;
+            return `${attackerInitial}> ${targetInitial} @${atkPos.v}-${atkPos.h} ${offset}, +${beforePct}% ${damageUnits.toFixed(1)} unit T ${targetInitial} ${arrow} ${sign}${deltaPct}%${critTextLong}`;
         case "MEDIUM":
             // Keep coords and core numbers, drop some words
             return `${attackerInitial}> ${targetInitial} @${atkPos.v}-${atkPos.h} ${damageUnits.toFixed(1)}T ${sign}${deltaPct}%${critTextMed}`;
@@ -448,11 +448,6 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 const afterPct = Math.round((Math.max(0, vic.shieldEnergy) / Math.max(1, MAX_SHIELD_ENERGY)) * 1000) / 10;
                 const deltaPct = Math.round((afterPct - beforePct) * 10) / 10; // likely negative
                 const dmg = Math.round((res.hita + Number.EPSILON) * 10) / 10; // one decimal
-                const atCoords = `${atk.position.v}-${atk.position.h}`;
-                const arrow = res.deflected && res.deflectTo ? ` -->${res.deflectTo.v}-${res.deflectTo.h},` : "";
-                const critText = res.critdm
-                    ? `; ${res.critDeviceName ?? "Device"} dam ${res.critdm}`
-                    : "";
 
                 const line = formatTorpedoShipHit({
                     attackerInitial,
@@ -533,10 +528,34 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                         `Torpedo ${res.hita > 0 ? `hit base @${coords} for ${Math.round(res.hita)} damage` : `was deflected @${coords}`}${res.critdm ? " (CRIT)" : ""}.`
                     );
                 } else {
-                    // non-base planet: optional infrastructure nibble
+                    // Non-base planet (FORTRAN parity):
+                    // 25% chance -> decrement builds; if builds < 0 after the hit, the planet is destroyed
                     if (ran() >= 0.75) {
-                        p.builds = Math.max(0, p.builds - 1);
-                        sendMessageToClient(player, `Torpedo impact on planet @${coords} disrupted infrastructure (-1 builds).`);
+                        // allow negative so we can detect destruction when starting at 0
+                        p.builds = p.builds - 1;
+
+                        if (p.builds < 0) {
+                            // scoring: shooter penalized −1000 for destroying a planet
+                            pointsManager.addPlanetsDestroyed(-1000, player, player.ship.side);
+
+                            // remove planet from world state
+                            const planetIdx = planets.indexOf(p);
+                            if (planetIdx !== -1) planets.splice(planetIdx, 1);
+
+                            // also remove from base list if somehow registered there (safety)
+                            const ownerBases = p.side === "FEDERATION" ? bases.federation : bases.empire;
+                            const bIdx = ownerBases.indexOf(p);
+                            if (bIdx !== -1) ownerBases.splice(bIdx, 1);
+                            p.isBase = false;
+
+                            // single authoritative event
+                            emitPlanetHit(p, "torpedo", 0, /*destroyed*/ true, player);
+                            sendMessageToClient(player, `Torpedo destroyed the planet @${coords}! (−1000)`);
+                            checkEndGame();
+                            break;
+                        } else {
+                            sendMessageToClient(player, `Torpedo impact on planet @${coords} disrupted infrastructure (−1 builds).`);
+                        }
                     } else {
                         sendMessageToClient(player, `Torpedo impact on planet @${coords} had no significant effect.`);
                     }
@@ -854,20 +873,25 @@ export function torpedoDamage(
                 const sign = atkSide !== tgtSide ? 1 : -1;
 
                 (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, source, atkSide);
-                (pointsManager as unknown as ScoringAPI).addEnemiesDestroyed?.(1, source, atkSide);
             }
 
             // --- base removal / collapse (single emit) ---
             {
                 const base = target as Planet;
                 const prevSide = base.side; // capture before mutation
+
+                // Remove from owning side's base list
                 const arr = prevSide === "FEDERATION" ? bases.federation : bases.empire;
                 const idx = arr.indexOf(base);
                 if (idx !== -1) arr.splice(idx, 1);
-                base.isBase = false;
-                base.builds = 0;
-                base.energy = 0;
+
+                // Remove from global planets as well (no demotion)
+                const pidx = planets.indexOf(base);
+                if (pidx !== -1) planets.splice(pidx, 1);
+
+                // BASKIL parity: undock/RED ships that were using this port
                 handleUndockForAllShipsAfterPortDestruction(base);
+
                 gameEvents.emit({
                     type: "planet_base_removed",
                     payload: {
@@ -875,8 +899,9 @@ export function torpedoDamage(
                             name: base.name,
                             previousSide: prevSide,
                             position: { ...base.position },
-                            energy: base.energy,
-                            builds: base.builds,
+                            // informational only; object is removed
+                            energy: 0,
+                            builds: 0,
                         },
                         by: (source instanceof Player && source.ship)
                             ? { shipName: source.ship.name, side: source.ship.side }
@@ -965,7 +990,6 @@ export function torpedoDamage(
         } else if (isBase) {
             const sign = atkSide !== (target as Planet).side ? 1 : -1;
             (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, source, atkSide);
-            (pointsManager as unknown as ScoringAPI).addEnemiesDestroyed?.(1, source, atkSide);
         }
     }
 
@@ -1071,30 +1095,28 @@ export function applyDamage(
         if (target.energy <= 0) {
             isDestroyed = true;
 
-            // capture before mutation
+            // capture before removal
             const prevSide = target.side;
 
+            // remove from owner's base list
             const arr = prevSide === "FEDERATION" ? bases.federation : bases.empire;
             const idx = arr.indexOf(target);
             if (idx !== -1) arr.splice(idx, 1);
 
-            // mutate the planet
-            target.isBase = false;
-            target.energy = 0;
-            target.builds = 0;
-            // NOTE: Fortran semantics usually keep side until later recapture; 
-            // if you demote to neutral immediately, do it explicitly here:
-            // target.side = "NEUTRAL";
+            // remove from global planets (no demotion)
+            const pidx = planets.indexOf(target);
+            if (pidx !== -1) planets.splice(pidx, 1);
 
+            // undock ships that were using this port (BASKIL parity)
             handleUndockForAllShipsAfterPortDestruction(target);
 
-            // emit with the captured previous side
+            // emit with captured previous side
             gameEvents.emit({
                 type: "planet_base_removed",
                 payload: {
                     planet: {
                         name: target.name,
-                        previousSide: prevSide,               // <-- fix
+                        previousSide: prevSide,
                         position: { ...target.position }
                     },
                     reason: "collapse_torpedo"

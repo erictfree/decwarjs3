@@ -319,17 +319,21 @@ export function applyPhaserDamage(
                     (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, attacker, atkSide);
                 }
 
-                const baseArray = (target as Planet).side === "FEDERATION" ? bases.federation : bases.empire;
-                const idx = baseArray.indexOf(target as Planet);
+                const base = target as Planet;
+                const prevSide = base.side;
+
+                const baseArray = prevSide === "FEDERATION" ? bases.federation : bases.empire;
+                const idx = baseArray.indexOf(base);
                 if (idx !== -1) baseArray.splice(idx, 1);
 
-                const prevSide = (target as Planet).side;
-                (target as Planet).isBase = false;
-                (target as Planet).builds = 0;
-                (target as Planet).energy = 0;
-                handleUndockForAllShipsAfterPortDestruction(target as Planet);
+                // Remove from global planets as well (no demotion)
+                const pidx = planets.indexOf(base);
+                if (pidx !== -1) planets.splice(pidx, 1);
 
-                emitPlanetBaseRemoved(target as Planet, "collapse_phaser", attacker, prevSide);
+                // BASKIL parity: undock/RED ships that were using this port
+                handleUndockForAllShipsAfterPortDestruction(base);
+
+                emitPlanetBaseRemoved(base, "collapse_phaser", attacker, prevSide);
                 checkEndGame = true;
                 baseKilledNow = true;
             }
@@ -421,17 +425,24 @@ export function applyPhaserDamage(
                 (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, attacker, atkSide);
             }
 
-            const baseArray = (target as Planet).side === "FEDERATION" ? bases.federation : bases.empire;
-            const idx = baseArray.indexOf(target as Planet);
-            if (idx !== -1) baseArray.splice(idx, 1);
-            (target as Planet).isBase = false;
-            (target as Planet).builds = 0;
-            (target as Planet).energy = 0;
-            handleUndockForAllShipsAfterPortDestruction(target as Planet);
-            checkEndGame = true;
+            {
+                const base = target as Planet;
+                const prevSide = base.side;
 
-            const prevSide = (target as Planet).side;
-            emitPlanetBaseRemoved(target as Planet, "collapse_phaser", attacker, prevSide);
+                const baseArray = prevSide === "FEDERATION" ? bases.federation : bases.empire;
+                const idx = baseArray.indexOf(base);
+                if (idx !== -1) baseArray.splice(idx, 1);
+
+                // Remove from global planets as well (no demotion)
+                const pidx = planets.indexOf(base);
+                if (pidx !== -1) planets.splice(pidx, 1);
+
+                // BASKIL parity: undock/RED ships that were using this port
+                handleUndockForAllShipsAfterPortDestruction(base);
+
+                emitPlanetBaseRemoved(base, "collapse_phaser", attacker, prevSide);
+                checkEndGame = true;
+            }
         }
     }
 

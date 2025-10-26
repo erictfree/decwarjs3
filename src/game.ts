@@ -66,7 +66,7 @@ export function generateGalaxy(seed?: string): void {
 
     const nstar = iran(51) * 5 + 100;
     const nhole = iran(41) + 10;
-    const nplnet = 60;
+    const nplnet = 80; // to jibe with 2.2, start with 80, 20 of which will become bases
 
     planets = Planet.generate(nplnet);
     console.log("generated planets");

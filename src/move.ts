@@ -104,7 +104,7 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
         multiplier = 3;
     }
 
-    const energyCost = warp * warp * multiplier;
+    const energyCost = 4 * warp * warp * multiplier;
 
     if (ship.energy < energyCost) {
         sendOutputMessage(player, {
@@ -155,6 +155,7 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
 
     const originalEnergy = ship.energy;
     ship.energy -= energyCost;
+
     //updateShipCondition(player);  TODO    
 
     maybeMisnavigate(player, destination);
@@ -287,7 +288,7 @@ export function impulseCommand(player: Player, command: Command, done?: () => vo
         return;
     }
 
-    let energyCost = 1;
+    let energyCost = 1;   // TODO check this to match move
     if (ship.shieldsUp) {
         energyCost *= 2;
     }
@@ -321,7 +322,7 @@ export function impulseCommand(player: Player, command: Command, done?: () => vo
         }
     }
 
-    ship.energy -= energyCost;
+    ship.energy -= 4 * energyCost;
 
     // updateShipCondition(player);  TODO
 

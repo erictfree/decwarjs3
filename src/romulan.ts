@@ -4,9 +4,10 @@ import { ran, iran } from './util/random.js';
 import { Player } from "./player.js";
 import { NullSocket } from "./util/nullsocket.js";
 import { GRID_HEIGHT, GRID_WIDTH, settings } from "./settings.js";
-import { players, bases, stars, pointsManager } from "./game.js";
+import { players, bases, stars, planets, pointsManager, checkEndGame } from "./game.js";
 import { addPendingMessage } from "./communication.js";
 import { queueCommands } from "./command.js";
+import { gameEvents } from "./api/events.js";
 
 // Switchable speech targeting policy (set default you believe matches FORTRAN)
 type TauntPolicy = "NEAREST_ONLY" | "SINGLE_SHIP_OR_SIDE_OR_ALL" | "SIDE_PREFERENCE";
@@ -341,8 +342,39 @@ function fireRomulanTorpedoes(target: Target): void {
                 }
                 torpedoDamage(romulan, obj);
             } else {
-                // accidental planet attack: 25% chance to reduce builds by 1
-                if (iran(100) >= 75) obj.builds = Math.max(0, obj.builds - 1);
+                // 25% chance to decrement; if builds < 0 after hit, planet is destroyed (FORTRAN parity)
+                if (iran(100) >= 75) {
+                    obj.builds = obj.builds - 1; // allow negative
+
+                    if (obj.builds < 0) {
+                        // Remove planet
+                        const pidx = planets.indexOf(obj);
+                        if (pidx !== -1) planets.splice(pidx, 1);
+
+                        // Also remove from base list if present (safety)
+                        const ownerBases = obj.side === "FEDERATION" ? bases.federation : bases.empire;
+                        const bIdx = ownerBases.indexOf(obj);
+                        if (bIdx !== -1) ownerBases.splice(bIdx, 1);
+                        obj.isBase = false;
+
+                        // Event/log
+                        gameEvents.emit({
+                            type: "planet_hit",
+                            payload: {
+                                planet: { name: obj.name, side: obj.side, position: { ...obj.position } },
+                                damage: 0,
+                                destroyed: true,
+                                by: { faction: "ROMULAN" },
+                            },
+                        });
+                        addPendingMessage(romulan, `Romulan torpedo destroyed the planet at ${aim!.v}-${aim!.h}.`);
+                        checkEndGame();
+                    } else {
+                        addPendingMessage(romulan, `Planet at ${aim!.v}-${aim!.h} infrastructure disrupted (−1 builds).`);
+                    }
+                } else {
+                    addPendingMessage(romulan, `Planet at ${aim!.v}-${aim!.h} unaffected by torpedo.`);
+                }
             }
         } else if (obj instanceof Ship) {
             const targetPlayer =

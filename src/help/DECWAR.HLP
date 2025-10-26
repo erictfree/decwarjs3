@@ -1275,7 +1275,7 @@ torpedo tube damage, and torpedo misfires.   A  torpedo  misfire
 also  aborts  the  remainder of the burst, and sometimes damages
 the torpedo tubes as well.  Torpedoes  can  cause  stars  to  go
 nova,  and  can  also destroy planets (if no enemy installations
-remain intact).  "Accidental" hits on friendly ships, bases,  or
+remain intact).  "Accidental" hits on friendly ships, gs,  or
 planets  are automatically neutralized.  A torpedo burst uses no
 ship energy.  Firing torpedoes (or getting hit by one) puts  you
 on red alert.
