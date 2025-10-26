@@ -34,18 +34,17 @@ export function removeAllPlanetsAndBasesFromSide(side: Side): void {
     // bases.federation.length = 0;
     // bases.empire.length = 0;
 
+
+    // Remove all planets on the specified side and all neutral planets
+    for (let i = planets.length - 1; i >= 0; i--) {
+        const planet = planets[i];
+        if (planet.side === side || planet.side === "NEUTRAL") {
+            planets.splice(i, 1);
+        }
+    }
+
     if (sideKey && bases[sideKey]) {
         bases[sideKey].length = 0;
     }
 
-    // Remove all planets on the opposite side
-    const oppositeSide = side === "FEDERATION" ? "EMPIRE" : side === "EMPIRE" ? "FEDERATION" : null;
-
-    if (oppositeSide) {
-        for (let i = planets.length - 1; i >= 0; i--) {
-            if (planets[i].side === oppositeSide && !planets[i].isBase) {
-                planets.splice(i, 1);
-            }
-        }
-    }
 }

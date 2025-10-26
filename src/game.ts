@@ -189,6 +189,7 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
     if (opts?.attributed && actor?.ship && !actor.ship.docked) {
         actor.updateLifeSupport();
     }
+    checkEndGame();
     tcmLastRun = Date.now();
     tcmRunning = false;
 }
@@ -310,18 +311,22 @@ export function checkEndGame(): void {
     // side's bases).  If so, the appropriate message is printed out
     // and the job is returned to monitor level.
 
+    //console.log("Checking for end game");
     if (settings.winner != null || !settings.generated) return;
 
-    const fedPlanetsExist = planets.some(p => p.side === "FEDERATION" && !p.isBase);
-    const empPlanetsExist = planets.some(p => p.side === "EMPIRE" && !p.isBase);
-
-    if (fedPlanetsExist || empPlanetsExist) {
+    // Check if any planets (excluding bases) still exist - game continues if so
+    // const planetsExist = planets.some(p => !p.isBase);
+    if (planetsExist) {
+        console.log("Planets exist, game continues");
         return;
     }
 
     const fedBasesExist = bases.federation.length > 0;
     const empBasesExist = bases.empire.length > 0;
 
+    // console.log("Checking for bases");
+    // console.log("empBasesExist", empBasesExist);
+    // console.log("fedBasesExist", fedBasesExist);
     if (!empBasesExist && fedBasesExist) {
         settings.winner = "FEDERATION";
     } else if (!fedBasesExist && empBasesExist) {
@@ -331,7 +336,7 @@ export function checkEndGame(): void {
     } else {
         return;
     }
-    console.log(settings.winner);
+    //console.log(settings.winner);
 
     let message = ``;
     if (settings.winner) {
