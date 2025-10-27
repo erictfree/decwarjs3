@@ -4,7 +4,7 @@ import { ran, iran } from './util/random.js';
 import { Player } from "./player.js";
 import { NullSocket } from "./util/nullsocket.js";
 import { GRID_HEIGHT, GRID_WIDTH, settings } from "./settings.js";
-import { players, bases, stars, planets, pointsManager, checkEndGame } from "./game.js";
+import { players, bases, stars, planets, pointsManager, checkEndGame, removePlanet } from "./game.js";
 import { addPendingMessage } from "./communication.js";
 import { queueCommands } from "./command.js";
 import { gameEvents } from "./api/events.js";
@@ -349,15 +349,8 @@ function fireRomulanTorpedoes(target: Target): void {
                     if (obj.builds < 0) {
                         // Credit the ROMULAN column with a destroyed planet (−100 to Romulan total).
                         pointsManager.addPlanetsDestroyed(1, /*by*/ undefined, "ROMULAN");
-                        // Remove planet
-                        const pidx = planets.indexOf(obj);
-                        if (pidx !== -1) planets.splice(pidx, 1);
-
-                        // Also remove from base list if present (safety)
-                        const ownerBases = obj.side === "FEDERATION" ? bases.federation : bases.empire;
-                        const bIdx = ownerBases.indexOf(obj);
-                        if (bIdx !== -1) ownerBases.splice(bIdx, 1);
-                        obj.isBase = false;
+                        // Centralized removal (arrays + team memory)
+                        removePlanet(obj);
 
                         // Event/log
                         gameEvents.emit({

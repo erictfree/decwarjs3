@@ -1,5 +1,6 @@
 import { Player } from "./player.js";
 import { Planet } from "./planet.js";
+import { Side } from "./settings.js";
 
 
 export const teamMemory = {
@@ -25,8 +26,7 @@ export function addPlanetToMemory(player: Player, planet: Planet): void {
 // }
 
 export function removePlanetFromMemory(planet: Planet): void {
-    teamMemory.federation.delete(`${planet.position.v},${planet.position.h}`);
-    teamMemory.empire.delete(`${planet.position.v},${planet.position.h}`);
+    removePlanetFromAllMemories(planet.position.v, planet.position.h);
 }
 
 // export function isBaseInMemory(player: Player, base: Base): boolean {
@@ -38,4 +38,17 @@ export function isPlanetInMemory(player: Player, planet: Planet): boolean {
     if (!player.ship) return false;
     const memory = player.ship.side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
     return memory.has(`${planet.position.v},${planet.position.h}`);
+}
+
+const key = (v: number, h: number) => `${v},${h}`;
+
+export function removePlanetFromTeamMemory(side: Side, v: number, h: number) {
+    const m = side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
+    m.delete(key(v, h));
+}
+
+export function removePlanetFromAllMemories(v: number, h: number) {
+    const k = key(v, h);
+    teamMemory.federation.delete(k);
+    teamMemory.empire.delete(k);
 }

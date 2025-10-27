@@ -13,6 +13,7 @@ import { pointsCommand } from "./points.js";
 import { basphaFireOnce } from "./starbase_phasers.js";
 import { planetPhaserDefense } from "./phaser.js";
 import { baseEnergyRegeneration } from "./planet.js";
+import { removePlanetFromAllMemories } from "./memory.js";
 import { autoRepairTick } from './repair.js';
 // DECWAR help text: ship destroyed at 2500 units of damage
 export const SHIP_FATAL_DAMAGE = 2500;
@@ -385,6 +386,37 @@ export function checkEndGame(): void {
         settings.gameNumber += 1;
     }
 }
+
+// === Centralized removal helpers =========================================
+// Use these instead of raw .splice() calls so LIST memory stays correct.
+
+export function removePlanetAt(v: number, h: number): boolean {
+    const idx = planets.findIndex(p => p.position.v === v && p.position.h === h);
+    if (idx === -1) return false;
+    planets.splice(idx, 1);
+    // keep team memory in sync
+    removePlanetFromAllMemories(v, h);
+    return true;
+}
+
+export function removePlanet(p: Planet): boolean {
+    return removePlanetAt(p.position.v, p.position.h);
+}
+
+export function removeBaseAt(side: "FEDERATION" | "EMPIRE", v: number, h: number): boolean {
+    const arr = side === "FEDERATION" ? bases.federation : bases.empire;
+    const idx = arr.findIndex(b => b.position.v === v && b.position.h === h);
+    if (idx === -1) return false;
+    arr.splice(idx, 1);
+    // bases share the same known-planet cache (isBase=true), clear stale memory too
+    removePlanetFromAllMemories(v, h);
+    return true;
+}
+
+export function removeBase(b: Planet): boolean {
+    return removeBaseAt(b.side as "FEDERATION" | "EMPIRE", b.position.v, b.position.h);
+}
+// =========================================================================
 
 
 export function checkForBlackholes(): void {

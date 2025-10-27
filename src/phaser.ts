@@ -9,7 +9,7 @@ import {
 import { sendMessageToClient, addPendingMessage, sendOutputMessage } from './communication.js';
 import { chebyshev, ocdefCoords, getCoordsFromCommandArgs } from './coords.js';
 import { Planet } from './planet.js';
-import { players, SHIP_FATAL_DAMAGE, planets, bases, removePlayerFromGame, checkEndGame, pointsManager } from './game.js';
+import { players, SHIP_FATAL_DAMAGE, planets, bases, removePlayerFromGame, checkEndGame, pointsManager, removeBase } from './game.js';
 import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
 import { PLANET_PHASER_RANGE } from './game.js';
 import { attackerRef, emitShipDestroyed } from './api/events.js';
@@ -337,14 +337,8 @@ export function applyPhaserDamage(
 
                 const base = target as Planet;
                 const prevSide = base.side;
-
-                const baseArray = prevSide === "FEDERATION" ? bases.federation : bases.empire;
-                const idx = baseArray.indexOf(base);
-                if (idx !== -1) baseArray.splice(idx, 1);
-
-                // Remove from global planets as well (no demotion)
-                const pidx = planets.indexOf(base);
-                if (pidx !== -1) planets.splice(pidx, 1);
+                // Centralized removal keeps team memory in sync
+                removeBase(base);
 
                 // BASKIL parity: undock/RED ships that were using this port
                 handleUndockForAllShipsAfterPortDestruction(base);
@@ -444,18 +438,10 @@ export function applyPhaserDamage(
             {
                 const base = target as Planet;
                 const prevSide = base.side;
-
-                const baseArray = prevSide === "FEDERATION" ? bases.federation : bases.empire;
-                const idx = baseArray.indexOf(base);
-                if (idx !== -1) baseArray.splice(idx, 1);
-
-                // Remove from global planets as well (no demotion)
-                const pidx = planets.indexOf(base);
-                if (pidx !== -1) planets.splice(pidx, 1);
-
+                // Centralized removal keeps team memory in sync
+                removeBase(base);
                 // BASKIL parity: undock/RED ships that were using this port
                 handleUndockForAllShipsAfterPortDestruction(base);
-
                 emitPlanetBaseRemoved(base, "collapse_phaser", attacker, prevSide);
                 checkEndGame = true;
             }

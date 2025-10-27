@@ -1,7 +1,7 @@
 import { Player } from './player.js';
 import { ran } from './util/random.js';
 import { Command } from './command.js';
-import { pointsManager, SHIP_FATAL_DAMAGE, players, bases, planets, stars, blackholes, removePlayerFromGame, checkEndGame } from './game.js';
+import { pointsManager, SHIP_FATAL_DAMAGE, players, bases, planets, stars, blackholes, removePlayerFromGame, checkEndGame, removeBase, removePlanet } from './game.js';
 import {
     addPendingMessage,
     putClientOnHold,
@@ -534,14 +534,8 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                         if (p.builds < 0) {
                             // Record one planet destroyed; PointsManager applies −100 internally.
                             pointsManager.addPlanetsDestroyed(1, player, player.ship.side);
-
-                            const planetIdx = planets.indexOf(p);
-                            if (planetIdx !== -1) planets.splice(planetIdx, 1);
-
-                            const ownerBases = p.side === "FEDERATION" ? bases.federation : bases.empire;
-                            const bIdx = ownerBases.indexOf(p);
-                            if (bIdx !== -1) ownerBases.splice(bIdx, 1);
-                            p.isBase = false;
+                            // Centralized removal (also clears team memory)
+                            removePlanet(p);
 
                             emitPlanetHit(p, "torpedo", 0, /*destroyed*/ true, player);
                             sendMessageToClient(player, formatPlanetDestroyed(out, /*wasBase*/ false, coords, /*planetPenalty*/ true));
@@ -932,19 +926,11 @@ export function torpedoDamage(
             {
                 const base = target as Planet;
                 const prevSide = base.side; // capture before mutation
-
-                // Remove from owning side's base list
-                const arr = prevSide === "FEDERATION" ? bases.federation : bases.empire;
-                const idx = arr.indexOf(base);
-                if (idx !== -1) arr.splice(idx, 1);
-
-                // Remove from global planets as well (no demotion)
-                const pidx = planets.indexOf(base);
-                if (pidx !== -1) planets.splice(pidx, 1);
-
+                // Centralized removal (arrays + team memory)
+                removeBase(base);
                 // BASKIL parity: undock/RED ships that were using this port
                 handleUndockForAllShipsAfterPortDestruction(base);
-
+                // Emit single authoritative removal event
                 gameEvents.emit({
                     type: "planet_base_removed",
                     payload: {
@@ -1147,22 +1133,11 @@ export function applyDamage(
 
         if (target.energy <= 0) {
             isDestroyed = true;
-
-            // capture before removal
-            const prevSide = target.side;
-
-            // remove from owner's base list
-            const arr = prevSide === "FEDERATION" ? bases.federation : bases.empire;
-            const idx = arr.indexOf(target);
-            if (idx !== -1) arr.splice(idx, 1);
-
-            // remove from global planets (no demotion)
-            const pidx = planets.indexOf(target);
-            if (pidx !== -1) planets.splice(pidx, 1);
-
+            const prevSide = target.side; // capture before removal
+            // Centralized removal (arrays + team memory)
+            removeBase(target);
             // undock ships that were using this port (BASKIL parity)
             handleUndockForAllShipsAfterPortDestruction(target);
-
             // emit with captured previous side
             gameEvents.emit({
                 type: "planet_base_removed",
