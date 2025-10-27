@@ -103,7 +103,16 @@ export function scan(player: Player, command: Command, range: number = DEFAULT_S
     const planetMap = new Map<string, Planet>();
     for (const planet of planets) {
         planetMap.set(coordKey(planet.position.v, planet.position.h), planet);
-        addPlanetToMemory(player, planet);
+        // Only record in memory if this planet/base is actually within the current scan window
+        const { v: pv, h: ph } = planet.position;
+        const inScanBox =
+            pv >= vMin && pv <= vMax &&
+            ph >= hMin && ph <= hMax;
+        // Optionally also enforce Chebyshev <= range if you want radial behavior:
+        // const inRange = chebyshev(planet.position, { v, h }) <= range;
+        if (inScanBox) {
+            addPlanetToMemory(player, planet);
+        }
     }
 
     const blackholeSet = new Set<string>(blackholes.map(bh => coordKey(bh.position.v, bh.position.h)));

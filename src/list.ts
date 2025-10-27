@@ -79,9 +79,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         // Determine collection range:
         // - If a numeric radius is provided, use it (explicitRange = true).
         // - Otherwise, LIST/SUMMARY/CLOSEST/ALL collect from the whole game.
-        const hasAll = clause.rangeFilters.includes("ALL");
-        const hasClosest = clause.rangeFilters.includes("CLOSEST");
-        const hasSummary = clause.modes.includes("SUMMARY");
+        // (No-op placeholders removed: ALL/CLOSEST/SUMMARY don't alter visibility.)
 
         const numericRanges = clause.rangeFilters.filter(r => typeof r === "number") as number[];
         if (numericRanges.length > 0) {
@@ -181,15 +179,20 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         const summarize = clause.modes.includes("SUMMARY");
-        // DECWAR visibility rule:
-        //   • Friendly ships/bases: always show coords & shields.
-        //   • Enemy ships: show coords & shields only if within scan range (10).
-        //   • Enemy bases/planets: show if within scan range OR previously known (team memory).
-        // This visibility rule is independent of the collection range.
+        // VISIBILITY radius is always scan range; collection range may be wider.
         const viewRadius = DEFAULT_SCAN_RANGE;
-        const bypassMemory = false;
 
-        // Show full object listings (as in 2.2 LIST default)
+        // --- Group ships by side (Fed → Empire → Romulan → others), then by (v,h) ---
+        const sideOrder: Record<string, number> = { FEDERATION: 0, EMPIRE: 1, ROMULAN: 2 };
+        allShips.sort((a, b) => {
+            const aIsRom = a.romulanStatus?.isRomulan === true;
+            const bIsRom = b.romulanStatus?.isRomulan === true;
+            const sa = aIsRom ? 2 : (sideOrder[a.side as keyof typeof sideOrder] ?? 99);
+            const sb = bIsRom ? 2 : (sideOrder[b.side as keyof typeof sideOrder] ?? 99);
+            if (sa !== sb) return sa - sb;
+            if (a.position.v !== b.position.v) return a.position.v - b.position.v;
+            return a.position.h - b.position.h;
+        });
         const finalShips = [];
         const finalBases = [];
         const finalPlanets = [];
@@ -198,7 +201,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         const qualifier = explicitRange ? "in specified range" : "in game";
 
         for (const ship of allShips) {
-            const line = formatShipLine(ship, outputMode, player, viewRadius, bypassMemory);
+            const line = formatShipLine(ship, outputMode, player, viewRadius);
             if (line) {
                 if (!onlySummarize) {
                     outputLines.push(line);
@@ -225,7 +228,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         for (const base of allBases) {
-            const line = formatBaseLine(base, outputMode, player, viewRadius, bypassMemory);
+            const line = formatBaseLine(base, outputMode, player, viewRadius);
             if (line) {
                 if (!onlySummarize) {
                     outputLines.push(line);
@@ -252,7 +255,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         for (const planet of allPlanets) {
-            const line = formatPlanetLine(planet, outputMode, player, viewRadius, bypassMemory);
+            const line = formatPlanetLine(planet, outputMode, player, viewRadius);
             if (line) {
                 if (!onlySummarize) {
                     outputLines.push(line);
@@ -295,8 +298,7 @@ function formatShipLine(
     ship: Ship,
     mode: OutputSetting,
     viewer: Player,
-    viewRadius: number = DEFAULT_SCAN_RANGE,
-    bypassMemory: boolean = false
+    viewRadius: number = DEFAULT_SCAN_RANGE
 ): string | null {
     if (ship.romulanStatus.isRomulan && ship.romulanStatus.cloaked) {
         return null;
@@ -311,13 +313,13 @@ function formatShipLine(
     //const { v, h } = ship.position;
     const flag = (ship.side !== viewer.ship.side) ? "*" : " ";
 
-    let coord = 'out of range';
+    // For enemy OOR, we will print name-only (no coord/shield).
+    let coord = '';
     const name = ship.name ?? '??';
     let fullName = (name[0].toUpperCase() + name.slice(1).toLowerCase()).padEnd(12);
     let percent = "%";
     const shieldPct = (ship.shieldEnergy / MAX_SHIELD_ENERGY) * 100;
     let shieldDisplay = `+${shieldPct.toFixed(0)}${percent}`.padStart(7);
-
 
     if (mode === "SHORT" || mode === "MEDIUM") {
         fullName = name[0].toUpperCase().padEnd(3);
@@ -332,16 +334,13 @@ function formatShipLine(
             coord = `@${coord}`;
         }
     } else {
-        // If caller asked for extended list (ALL / explicit radius), still show coords
-        if (bypassMemory) {
-            coord = `${formatCoordsForPlayer2(ship.position.v, ship.position.h, viewer)}`;
-        } else {
-            shieldDisplay = '';
-        }
+        // Enemy ship out of range: print the literal text like FORTRAN.
+        coord = 'out of range';
+        shieldDisplay = '';
     }
 
     if (mode === "SHORT" || mode === "MEDIUM") {
-        return `${flag}${fullName}${coord} ${shieldDisplay}`;
+        return `${flag}${fullName}${coord}${shieldDisplay ? ' ' + shieldDisplay : ''}`;
     } else {
         return `${flag}${fullName}${coord}${shieldDisplay}`;
     }
@@ -351,14 +350,13 @@ function formatBaseLine(
     base: Planet,
     mode: OutputSetting,
     viewer: Player,
-    viewRadius: number = DEFAULT_SCAN_RANGE,
-    bypassMemory: boolean = false
+    viewRadius: number = DEFAULT_SCAN_RANGE
 ): string | null {
     if (!viewer.ship) {
         return null;
     }
     const distance = chebyshev(base.position, viewer.ship.position);
-    if (distance > viewRadius && base.side !== viewer.ship.side && !bypassMemory) {
+    if (distance > viewRadius && base.side !== viewer.ship.side) {
         const memory = viewer.ship.side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
         if (!memory.has(`${base.position.v},${base.position.h}`)) {
             return null;
@@ -396,14 +394,13 @@ function formatPlanetLine(
     planet: Planet,
     mode: OutputSetting,
     viewer: Player,
-    viewRadius: number = DEFAULT_SCAN_RANGE,
-    bypassMemory: boolean = false
+    viewRadius: number = DEFAULT_SCAN_RANGE
 ): string | null {
     if (!viewer.ship) {
         return null;
     }
     const distance = chebyshev(planet.position, viewer.ship.position);
-    if (distance > viewRadius && !bypassMemory) {
+    if (distance > viewRadius) {
         const memory = viewer.ship.side === "FEDERATION" ? teamMemory.federation : teamMemory.empire;
         if (!memory.has(`${planet.position.v},${planet.position.h}`)) {
             return null;
@@ -412,14 +409,8 @@ function formatPlanetLine(
 
     const name = planet.side.slice(0, 3).charAt(0).toUpperCase() + planet.side.slice(1, 3).toLowerCase() + " planet";
     const isEnemy = planet.side !== viewer.ship.side && planet.side !== "NEUTRAL";
-    let flag;
-    if (isEnemy) {
-        flag = "*";
-    } else if (planet.side === "NEUTRAL") {
-        flag = " ";
-    } else {
-        flag = "-";
-    }
+    // LIST uses '*' for enemy, space otherwise (no '-' for friendly planets)
+    const flag = isEnemy ? "*" : " ";
 
     let fullName, builds;
     let coord = `${formatCoordsForPlayer2(planet.position.v, planet.position.h, viewer)}`
