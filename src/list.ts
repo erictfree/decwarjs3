@@ -67,16 +67,18 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
             clause.objectFilters = ["SHIPS", "BASES", "PLANETS"];
         }
 
-        let range = DEFAULT_SCAN_RANGE;
+        // DECWAR: LIST (and SUMMARY) include everything by default (infinite collection range),
+        // but enemy ship/base details are still only visible within scan range.
+        let range = Infinity;
         let explicitRange = false;
         let allShips: Ship[] = [];
         let allBases: Planet[] = [];
         let allPlanets: Planet[] = [];
         const outputLines: string[] = [];
 
-        // Determine range per DECWAR semantics:
+        // Determine collection range:
         // - If a numeric radius is provided, use it (explicitRange = true).
-        // - Otherwise, SUMMARY, CLOSEST, or ALL imply infinite radius.
+        // - Otherwise, LIST/SUMMARY/CLOSEST/ALL collect from the whole game.
         const hasAll = clause.rangeFilters.includes("ALL");
         const hasClosest = clause.rangeFilters.includes("CLOSEST");
         const hasSummary = clause.modes.includes("SUMMARY");
@@ -86,9 +88,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
             range = Math.max(...numericRanges);
             explicitRange = true;
         }
-        if (!explicitRange && (hasAll || hasClosest || hasSummary)) {
-            range = Infinity;
-        }
+        // range already defaults to Infinity; no change needed for ALL/CLOSEST/SUMMARY.
 
         // filter by objects first
 
@@ -181,9 +181,13 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         const summarize = clause.modes.includes("SUMMARY");
-        const viewRadius = range === Infinity ? Number.POSITIVE_INFINITY : range;
-        // SUMMARY/CLOSEST/ALL behave like an explicit wide query; show coords even if normally "out of range".
-        const bypassMemory = explicitRange || hasAll || hasClosest || hasSummary;
+        // DECWAR visibility rule:
+        //   • Friendly ships/bases: always show coords & shields.
+        //   • Enemy ships: show coords & shields only if within scan range (10).
+        //   • Enemy bases/planets: show if within scan range OR previously known (team memory).
+        // This visibility rule is independent of the collection range.
+        const viewRadius = DEFAULT_SCAN_RANGE;
+        const bypassMemory = false;
 
         // Show full object listings (as in 2.2 LIST default)
         const finalShips = [];
@@ -363,6 +367,7 @@ function formatBaseLine(
 
     const name = base.side.slice(0, 3).charAt(0).toUpperCase() + base.side.slice(1, 3).toLowerCase();
     const isEnemy = base.side !== viewer.ship.side;
+    const isOutOfRangeEnemy = isEnemy && distance > viewRadius; // DECWAR: hide enemy base shields when OOR
     const flag = isEnemy ? "*" : " ";
     let fullName;
     let percent;
@@ -378,9 +383,9 @@ function formatBaseLine(
     const coord = `${formatCoordsForPlayer2(base.position.v, base.position.h, viewer)}`;
     //const delta = `${dx >= 0 ? "+" : ""}${dx},${dy >= 0 ? "+" : ""}${dy}`.padStart(9);
     const shieldPct = (base.energy / INITIAL_BASE_STRENGTH) * 100;
-    let shieldDisplay = `+${shieldPct.toFixed(1)}${percent}`.padStart(9);
+    let shieldDisplay = isOutOfRangeEnemy ? "" : `+${shieldPct.toFixed(1)}${percent}`.padStart(9);
     if (mode === "SHORT" || mode === "MEDIUM") {
-        shieldDisplay = `${shieldPct.toFixed(0)}${percent}`.padStart(8);
+        shieldDisplay = isOutOfRangeEnemy ? "" : `${shieldPct.toFixed(0)}${percent}`.padStart(8);
         return `${flag}${fullName}${coord}${shieldDisplay}`;
     } else {
         return `${flag}${fullName}@${coord}${shieldDisplay}`;

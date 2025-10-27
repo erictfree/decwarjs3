@@ -165,7 +165,7 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
             // ======================================
 
             // Log current game state
-            console.log(`TCM: Planets=${planets.length}, Bases: FED=${bases.federation.length}, EMP=${bases.empire.length}`);
+            //console.log(`TCM: Planets=${planets.length}, Bases: FED=${bases.federation.length}, EMP=${bases.empire.length}`);
         }
 
         // Romulan driver (spawn + behavior), gated at sweep boundary
@@ -325,7 +325,7 @@ export function checkEndGame(): void {
     // Check if any planets (excluding bases) still exist - game continues if so
     const planetsExist = planets.some(p => !p.isBase);
     if (planetsExist) {
-        console.log("Planets exist, game continues");
+        //console.log("Planets exist, game continues");
         return;
     }
 

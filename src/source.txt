@@ -3017,6 +3017,7 @@ import { pointsCommand } from "./points.js";
 import { basphaFireOnce } from "./starbase_phasers.js";
 import { planetPhaserDefense } from "./phaser.js";
 import { baseEnergyRegeneration } from "./planet.js";
+import { autoRepairTick } from './repair.js';
 // DECWAR help text: ship destroyed at 2500 units of damage
 export const SHIP_FATAL_DAMAGE = 2500;
 import { romulanApproachTick } from "./romulan.js";
@@ -3193,6 +3194,13 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
     if (opts?.attributed && actor?.ship && !actor.ship.docked) {
         actor.updateLifeSupport();
     }
+
+    // FORTRAN parity: after every time-consuming move, apply automatic device repair to the mover.
+    // (Normal turn repair: 30 units per damaged device; silent; no time added.)
+    if (opts?.attributed && actor?.ship) {
+        autoRepairTick(actor);
+    }
+
     checkEndGame();
     tcmLastRun = Date.now();
     tcmRunning = false;
@@ -6849,20 +6857,30 @@ export class PointsManager {
 
 
   // Nova star collapse counter; no points here (adjust if you want stars to grant points).
-  addStarsDestroyed(count: number, _by: Player | undefined, side: Side) {
-    if (!side || side === "NEUTRAL" || count === 0) return;
+  addStarsDestroyed(count: number, by: Player | undefined, side: Side) {
+    if (!side || side === "NEUTRAL") return;
+    if (count <= 0) return; // counts only (protect against passing -50 etc.)
     this.starsDestroyed[side] = (this.starsDestroyed[side] ?? 0) + count;
     this.categoryTotals[side].starsDestroyed += count;
+    // credit the player's raw bucket so BUZZARD column reflects it
+    if (by) {
+      by.points.starsDestroyed = (by.points.starsDestroyed ?? 0) + count;
+    }
     // FORTRAN: -50 per star destroyed
     const penalty = 50 * count;
     this.teamTotals[side] = (this.teamTotals[side] ?? 0) - penalty;
     this.turnTotals[side] = (this.turnTotals[side] ?? 0) - penalty;
   }
 
-  addPlanetsDestroyed(count: number, _by: Player | undefined, side: Side) {
-    if (!side || side === "NEUTRAL" || count === 0) return;
+  addPlanetsDestroyed(count: number, by: Player | undefined, side: Side) {
+    if (!side || side === "NEUTRAL") return;
+    if (count <= 0) return; // counts only (protect against passing -100 / -1000)
     this.planetsDestroyed[side] = (this.planetsDestroyed[side] ?? 0) + count;
     this.categoryTotals[side].planetsDestroyed += count;
+    // credit the player's raw bucket so BUZZARD column reflects it
+    if (by) {
+      by.points.planetsDestroyed = (by.points.planetsDestroyed ?? 0) + count;
+    }
     // FORTRAN: -100 per planet destroyed
     const penalty = 100 * count;
     this.teamTotals[side] = (this.teamTotals[side] ?? 0) - penalty;
@@ -7769,6 +7787,28 @@ export function repairCommand(player: Player, command: Command, done?: () => voi
     }
 }
 
+/**
+ * Auto-repair that runs after every time-consuming move (FORTRAN REPAIR with il=3).
+ * Silently subtracts the normal per-turn repair from EACH damaged device.
+ * Note: FORTRAN repsiz=300 corresponds to 30 real units; we use 30 here.
+ * Docking does NOT accelerate this path (il==3 is not promoted to docked speed).
+ */
+export function autoRepairTick(player: Player): void {
+    if (!player.ship) return;
+    const NORMAL_TURN_REPAIR = 30; // DECWAR manual: "normal repair rate of 30 units per turn"
+    let any = false;
+    for (const [device, dmg] of Object.entries(player.ship.devices)) {
+        const cur = typeof dmg === "number" ? dmg : 0;
+        if (cur > 0) {
+            const newVal = Math.max(0, cur - NORMAL_TURN_REPAIR);
+            // @ts-expect-error: DeviceName index is valid at runtime
+            player.ship.devices[device] = newVal;
+            any = true;
+        }
+    }
+    // No messages and no pause (matches FORTRAN REPAIR il=3 behavior).
+}
+
 ######## romulan.ts
 // romulan.ts — FORTRAN-parity Romulan (ROMDRV/ROMTOR/ROMSTR/PHAROM/TOROM/DEADRO)
 
@@ -8119,6 +8159,8 @@ function fireRomulanTorpedoes(target: Target): void {
                     obj.builds = obj.builds - 1; // allow negative
 
                     if (obj.builds < 0) {
+                        // Credit the ROMULAN column with a destroyed planet (−100 to Romulan total).
+                        pointsManager.addPlanetsDestroyed(1, /*by*/ undefined, "ROMULAN");
                         // Remove planet
                         const pidx = planets.indexOf(obj);
                         if (pidx !== -1) planets.splice(pidx, 1);
@@ -10715,7 +10757,8 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                         p.builds = p.builds - 1; // allow negative so we can detect destruction when starting at 0
 
                         if (p.builds < 0) {
-                            pointsManager.addPlanetsDestroyed(-1000, player, player.ship.side); // −1000 penalty
+                            // Record one planet destroyed; PointsManager applies −100 internally.
+                            pointsManager.addPlanetsDestroyed(1, player, player.ship.side);
 
                             const planetIdx = planets.indexOf(p);
                             if (planetIdx !== -1) planets.splice(planetIdx, 1);
