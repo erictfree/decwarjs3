@@ -67,6 +67,8 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
             clause.objectFilters = ["SHIPS", "BASES", "PLANETS"];
         }
 
+        const summarize = clause.modes.includes("SUMMARY");
+
         // DECWAR: LIST (and SUMMARY) include everything by default (infinite collection range),
         // but enemy ship/base details are still only visible within scan range.
         let range = Infinity;
@@ -147,8 +149,8 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
             }
         }
 
-        // filter by range (collection stage)
-        if (range !== Infinity) {
+        // filter by range (collection stage) - but not for SUMMARY commands
+        if (range !== Infinity && !summarize) {
             allShips = allShips.filter(s => chebyshev(ship.position, s.position) <= range);
             allBases = allBases.filter(b => chebyshev(ship.position, b.position) <= range);
             allPlanets = allPlanets.filter(p => chebyshev(ship.position, p.position) <= range);
@@ -178,7 +180,6 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
             );
         }
 
-        const summarize = clause.modes.includes("SUMMARY");
         // VISIBILITY radius is always scan range; collection range may be wider.
         const viewRadius = DEFAULT_SCAN_RANGE;
 
@@ -193,9 +194,14 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
             if (a.position.v !== b.position.v) return a.position.v - b.position.v;
             return a.position.h - b.position.h;
         });
-        const finalShips = [];
-        const finalBases = [];
-        const finalPlanets = [];
+        // Keep pre-visibility copies for correct SUMMARY counts
+        const collectedShips = allShips.slice();
+        const collectedBases = allBases.slice();
+        const collectedPlanets = allPlanets.slice();
+
+        const finalShips: Ship[] = [];
+        const finalBases: Planet[] = [];
+        const finalPlanets: Planet[] = [];
         let needReturn = false;
 
         const qualifier = explicitRange ? "in specified range" : "in game";
@@ -217,7 +223,8 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         if (summarize) {
-            const shipSummary: ListSummary = summarizeShips(finalShips);
+            // SUMMARY should count everything in collection (not just visible)
+            const shipSummary: ListSummary = summarizeShips(collectedShips);
             printSummary(shipSummary, "ships", qualifier, outputLines);
             if (finalShips.length > 0) needReturn = true;
         }
@@ -244,7 +251,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         if (summarize) {
-            const baseSummary: ListSummary = summarizeBases(finalBases);
+            const baseSummary: ListSummary = summarizeBases(collectedBases);
             printSummary(baseSummary, "bases", qualifier, outputLines);
             if (finalBases.length > 0) needReturn = true;
         }
@@ -272,7 +279,7 @@ export function listCommandHelper(player: Player, command: Command, onlySummariz
         }
 
         if (summarize) {
-            const planetSummary: ListSummary = summarizePlanets(finalPlanets);
+            const planetSummary: ListSummary = summarizePlanets(collectedPlanets);
             printSummary(planetSummary, "planets", qualifier, outputLines);
             if (finalPlanets.length > 0) needReturn = true;
         }
