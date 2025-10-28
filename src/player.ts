@@ -262,8 +262,7 @@ export class Player {
 
     quitGame(): void {
         emitShipLeft(this, "logout"); // or "logout"/"timeout"/"idle"
-        const idx = players.findIndex(p => p === this);
-        if (idx !== -1) players.splice(idx, 1);
+        removePlayerFromGame(this);
 
         this.socket?.end();
         this.socket?.destroy();

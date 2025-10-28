@@ -141,6 +141,9 @@ export function triggerNovaAt(player: Player, v: number, h: number): void {
                 } else if (posType === "EMPTY") {
                     displaceObject(other.ship, newV, newH);
                     sendMessageToClient(other, `Your ship was displaced to ${newV}-${newH} by a nova!`);
+                    if (tractoringShip) {
+                        disconnectTractorWithReason(tractoringShip, `nova at ${newV}-${newH}`);
+                    }
                     break;
                 }
                 //TODO and what if another ship or planet?

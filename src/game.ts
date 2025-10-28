@@ -19,6 +19,7 @@ import { autoRepairTick } from './repair.js';
 export const SHIP_FATAL_DAMAGE = 2500;
 import { romulanApproachTick } from "./romulan.js";
 import { emitShipDestroyed, emitShipLeft } from "./api/events.js";
+import { disconnectTractorWithReason } from "./tractor.js";
 
 
 // bot imports
@@ -439,6 +440,9 @@ export function checkForBlackholes(): void {
 
 export function removePlayerFromGame(player: Player): void {
     // Remove from global players list
+    if (player.ship?.tractorPartner) {
+        disconnectTractorWithReason(player.ship, `Tractor partner disappeared`);
+    }
     const idx = players.findIndex(p => p === player);
     if (idx !== -1) players.splice(idx, 1);
     // Remove ship from destroyedShips list if present
