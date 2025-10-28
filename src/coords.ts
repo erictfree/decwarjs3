@@ -195,42 +195,49 @@ export function isAdjacent(pos1: Position, pos2: Position): boolean {
     return (dh <= 1 && dv <= 1) && !(dh === 0 && dv === 0);
 }
 
-export function getTrailingPosition(origin: Position, destination: Position): Position | null {
-    // Sort origin's adjacent positions by distance to destination
-    const sortedOriginAdjacents = getAdjacentPositions(origin)
-        .filter(pos => isInBounds(pos.v, pos.h) && !findObjectAtPosition(pos.v, pos.h))
-        .sort((a, b) => distance(b, destination) - distance(a, destination)); // trailing = farther from destination
 
-    if (sortedOriginAdjacents.length > 0) {
-        const result = sortedOriginAdjacents[0];
-        if (isInBounds(result.v, result.h)) { // Explicit check for clarity
-            return result;
-        }
-        // If somehow not in bounds (shouldn't happen), proceed to fallback
-    }
-
-    // Fallback: try positions around the destination
-    const sortedDestinationAdjacents = getAdjacentPositions(destination)
-        .filter(pos => isInBounds(pos.v, pos.h) && !findObjectAtPosition(pos.v, pos.h))
-        .sort((a, b) => distance(a, origin) - distance(b, origin)); // prefer closer to the line from origin to destination
-
-    if (sortedDestinationAdjacents.length > 0) {
-        const result = sortedDestinationAdjacents[0];
-        if (isInBounds(result.v, result.h)) { // Explicit check for clarity
-            return result;
-        }
-        // If somehow not in bounds (shouldn't happen), return null
-    }
-
-    // No valid trailing position found
-    return null;
+export function sign(n: number): number {
+    return n === 0 ? 0 : (n > 0 ? 1 : -1);
 }
 
-function distance(a: Position, b: Position): number {    // is thislegit? why
-    return Math.hypot(a.v - b.v, a.h - b.h);
+// Ideal trailing slot: one step behind the leader along its move vector
+export function computeTrailingSlot(leaderFrom: Position, leaderTo: Position, gap = 1): Position {
+    const dv = sign(leaderTo.v - leaderFrom.v);
+    const dh = sign(leaderTo.h - leaderFrom.h);
+    // If the leader didn't move, just return leaderTo; caller will handle fallback/no-op.
+    if (dv === 0 && dh === 0) return { v: leaderTo.v, h: leaderTo.h };
+    return { v: leaderTo.v - gap * dv, h: leaderTo.h - gap * dh };
 }
 
-function getAdjacentPositions(pos: Position): Position[] {
+// Among leader-adjacent tiles, choose the one closest (by Chebyshev) to the target
+export function bestLeaderAdjacentToward(
+    leaderTo: Position,
+    target: Position
+): Position | null {
+    const candidates = getAdjacentPositions(leaderTo)
+        .filter(p => isInBounds(p.v, p.h) && !findObjectAtPosition(p.v, p.h));
+
+    if (candidates.length === 0) return null;
+
+    // Deterministic tie-break: lower v, then lower h
+    let best = candidates[0];
+    let bestD = chebyshev(best, target);
+
+    for (let i = 1; i < candidates.length; i++) {
+        const c = candidates[i];
+        const d = chebyshev(c, target);
+        if (
+            d < bestD ||
+            (d === bestD && (c.v < best.v || (c.v === best.v && c.h < best.h)))
+        ) {
+            best = c;
+            bestD = d;
+        }
+    }
+    return best;
+}
+
+export function getAdjacentPositions(pos: Position): Position[] {
     const deltas = [
         { v: 0, h: -1 }, // up
         { v: 0, h: 1 },  // down

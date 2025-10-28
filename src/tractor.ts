@@ -4,7 +4,8 @@ import { Command } from './command.js';
 import { addPendingMessage, sendMessageToClient, sendOutputMessage } from './communication.js';
 import { SHIPNAMES } from './settings.js';
 import { Ship } from './ship.js';
-import { chebyshev } from './coords.js';
+import { chebyshev, isInBounds, findObjectAtPosition, ocdefCoords, sign, bestLeaderAdjacentToward, computeTrailingSlot, Position } from './coords.js';
+
 
 export function tractorCommand(player: Player, command: Command): void {
     const args = command.args;
@@ -61,10 +62,6 @@ export function tractorCommand(player: Player, command: Command): void {
         return;
     }
 
-    if (!target || !target.ship) {
-        sendMessageToClient(player, `${targetName} is not active.`);
-        return;
-    }
     if (target === player) {
         sendMessageToClient(player, "Beg your pardon, sir?  You want to apply a tractor beam to your own ship?");
         return;
@@ -107,14 +104,23 @@ export function tractorCommand(player: Player, command: Command): void {
     addPendingMessage(target, `You are now being tractored by ${player.ship.name}.`);
 }
 
-export function disconnectTractor(ship: Ship): void {
-    if (ship.tractorPartner) {
-        if (ship.tractorPartner.tractorPartner) {
-            addPendingMessage(ship.tractorPartner.player, `Tractor beam broken, ${ship.name} disconnected.`);
-            ship.tractorPartner.tractorPartner = null;
-        }
-        ship.tractorPartner = null;
-        sendMessageToClient(ship.player, `Tractor beam broken, Captain.`);
+export function disconnectTractor(ship: Ship, reason?: string): void {
+    const a = ship;
+    const b = a.tractorPartner;
+
+    if (!b) return; // already disconnected
+
+    // Clear both ends symmetrically (only if they actually point to each other)
+    if (b.tractorPartner === a) b.tractorPartner = null;
+    a.tractorPartner = null;
+
+    // Messaging (do this after clearing links to avoid re-entrancy surprises)
+    const suffix = reason ? ` (${reason})` : "";
+    sendMessageToClient(a.player, `Tractor beam broken, Captain.${suffix}`);
+
+    // Notify the other player if they still exist
+    if (b.player) {
+        addPendingMessage(b.player, `Tractor beam broken, ${a.name} disconnected.${suffix}`);
     }
 }
 
@@ -128,4 +134,46 @@ export function disconnectTractorWithReason(ship: Ship, reason: string): void {
         }
         ship.tractorPartner = null;
     }
+}
+
+
+
+export function tractorShip(leader: Ship, leaderFrom: Position): void {
+    const follower = leader.tractorPartner;
+    if (!follower) return;
+
+    const leaderTo = leader.position;
+
+    // If leader didn't move, leave the follower as-is.
+    if (leaderFrom.v === leaderTo.v && leaderFrom.h === leaderTo.h) return;
+
+    const trailing = computeTrailingSlot(leaderFrom, leaderTo, /*gap=*/1);
+
+    // 1) Prefer exact trailing slot if it's free & in bounds
+    let finalPos: Position | null = null;
+    if (isInBounds(trailing.v, trailing.h) && !findObjectAtPosition(trailing.v, trailing.h)) {
+        finalPos = trailing;
+    } else {
+        // 2) Otherwise pick the leader-adjacent square closest to the trailing slot
+        finalPos = bestLeaderAdjacentToward(leaderTo, trailing);
+    }
+
+    if (!finalPos) {
+        // Nowhere safe to place the follower — drop the tractor link
+        disconnectTractor(leader);
+        return;
+    }
+
+    follower.position = finalPos;
+
+    const coords = ocdefCoords(
+        follower.player.settings.ocdef,
+        follower.position,
+        finalPos
+    );
+    sendMessageToClient(follower.player, `${leader.name} has moved to ${coords}.`);
+    addPendingMessage(
+        follower.player,
+        `You were tractored to @${finalPos.v}-${finalPos.h}.` // fixed stray brace
+    );
 }

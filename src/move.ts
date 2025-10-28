@@ -9,14 +9,12 @@ import { Ship, applyDeviceDamage } from "./ship.js";
 import { bresenhamLine } from "./coords.js";
 import { GRID_WIDTH, GRID_HEIGHT, WARP_DELAY_MIN_MS, WARP_DELAY_RANGE, IMPULSE_DELAY_MS, IMPULSE_DELAY_RANGE } from "./settings.js";
 import { ran, iran } from "./util/random.js";
-import { isInBounds, getCoordsFromCommandArgs, findObjectAtPosition, ocdefCoords, isAdjacent, getTrailingPosition } from "./coords.js";
+import { isInBounds, getCoordsFromCommandArgs, findObjectAtPosition, ocdefCoords, isAdjacent } from "./coords.js";
 import { Player } from "./player.js";
 import { Command } from "./command.js";
 import { gameEvents } from "./api/events.js";
 import { ShipMovedPayload, emitShipUndocked } from "./api/events.js";
-
-
-import { disconnectTractor } from "./tractor.js";
+import { tractorShip, disconnectTractor } from "./tractor.js";
 
 export function moveCommand(player: Player, command: Command, done?: () => void): void {
 
@@ -153,6 +151,14 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
         prevPoint = pt;
     }
 
+    // If collision trimming leaves us at the start, the very first step is blocked.
+    // Abort early to avoid showing a misleading "(+0 +0)" and to avoid charging energy.
+    if (destination.v === startV && destination.h === startH) {
+        sendMessageToClient(player, "Warp aborted: sector is now occupied.");
+        done?.();
+        return;
+    }
+
     const originalEnergy = ship.energy;
     ship.energy -= energyCost;
 
@@ -174,7 +180,7 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
         if (findObjectAtPosition(destination.v, destination.h)) {
             releaseClient(player);
             ship.energy = originalEnergy;
-            sendMessageToClient(player, "Warp aborted: sector is now occupied.");
+            sendMessageToClient(player, "Warp aborted: sector is now occupied."); //todo still needed? i think so
         } else {
             releaseClient(player);
             const from = { v: ship.position.v, h: ship.position.h };
@@ -194,7 +200,7 @@ export function moveCommand(player: Player, command: Command, done?: () => void)
             });
 
             sendMessageToClient(player, message);
-            if (ship.tractorPartner) tractorShip(ship);
+            if (ship.tractorPartner) tractorShip(ship, from);
         }
         done?.();
     }, delayMs);
@@ -334,6 +340,7 @@ export function impulseCommand(player: Player, command: Command, done?: () => vo
     const delayMs = IMPULSE_DELAY_MS + ran() * IMPULSE_DELAY_RANGE;
 
     const timer = setTimeout(() => {
+        const from = { v: ship.position.v, h: ship.position.h };
         releaseClient(player);
         if (findObjectAtPosition(destination.v, destination.h)) {
             sendOutputMessage(player, {
@@ -349,7 +356,7 @@ export function impulseCommand(player: Player, command: Command, done?: () => vo
         ship.position = destination;
         sendMessageToClient(player, `IMPULSE complete to sector ${coords}`);
 
-        tractorShip(ship);
+        tractorShip(ship, from);
         done?.();
     }, delayMs);
 
@@ -372,17 +379,18 @@ function maybeMisnavigate(player: Player, destination: { v: number; h: number })
     }
 }
 
-function tractorShip(ship: Ship): void {
-    if (!ship.tractorPartner) return;
+// export function tractorShip(ship: Ship): void {
+//     if (!ship.tractorPartner) return;
 
-    const trailingPosition = getTrailingPosition(ship.position, ship.tractorPartner.position);
-    if (!trailingPosition) {
-        disconnectTractor(ship);
-    } else {
-        ship.tractorPartner.position = trailingPosition;
-        const coords = ocdefCoords(ship.tractorPartner.player.settings.ocdef, ship.tractorPartner.position, trailingPosition);
-        sendMessageToClient(ship.tractorPartner.player, `${ship.name} has moved to ${coords}.`);
-        addPendingMessage(ship.tractorPartner.player, `You were tractored to @${trailingPosition.v}-${trailingPosition.h}}.`);
-    }
-}
+//     const trailingPosition = getTrailingPosition(ship.position, ship.tractorPartner.position);
+//     console.log("trailingPosition", trailingPosition);
+//     if (!trailingPosition) {
+//         disconnectTractor(ship);
+//     } else {
+//         ship.tractorPartner.position = trailingPosition;
+//         const coords = ocdefCoords(ship.tractorPartner.player.settings.ocdef, ship.tractorPartner.position, trailingPosition);
+//         sendMessageToClient(ship.tractorPartner.player, `${ship.name} has moved to ${coords}.`);
+//         addPendingMessage(ship.tractorPartner.player, `You were tractored to @${trailingPosition.v}-${trailingPosition.h}}.`);
+//     }
+// }
 
