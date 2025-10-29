@@ -92,7 +92,11 @@ export function tellCommand(player: Player, command: Command): void {
     }
 
     if (recipients.length === 0) {
-        sendMessageToClient(player, `No reachable ${matchGroup}'s for TELL.`);
+        if (matchGroup) {
+            sendMessageToClient(player, `No reachable ${matchGroup}'s for TELL.`);
+        } else {
+            sendMessageToClient(player, `No reachable ships for TELL.`);
+        }
         return;
     }
 

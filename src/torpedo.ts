@@ -768,10 +768,10 @@ function formatPlanetDestroyed(output: OutputSetting, wasBase: boolean, coords: 
         }
     } else {
         switch (output) {
-            case "SHORT": return `F > ${coords} PLANET DESTROYED${penalized ? " (−1000)" : ""}`;
-            case "MEDIUM": return `Planet destroyed @${coords}!${penalized ? " (−1000)" : ""}`;
+            case "SHORT": return `F > ${coords} PLANET DESTROYED${penalized ? " (−100)" : ""}`;
+            case "MEDIUM": return `Planet destroyed @${coords}!${penalized ? " (−100)" : ""}`;
             case "LONG":
-            default: return `Torpedo destroyed the planet @${coords}!${penalized ? " (−1000)" : ""}`;
+            default: return `Torpedo destroyed the planet @${coords}!${penalized ? " (−100)" : ""}`;
         }
     }
 }
