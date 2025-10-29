@@ -179,7 +179,7 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
 
         // General side-playing bots (testing only). Guard with env to avoid unintended CPU use.
         if (true || process.env.SPAWN_SIDE_BOTS === "1") {
-            ensureBots(2);      // keep exactly two bot ships alive
+            ensureBots(6);      // keep exactly two bot ships alive
             updateSideBots();   // drive them this sweep
         }
     } else {

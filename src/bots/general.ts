@@ -87,8 +87,18 @@ export function ensureBots(desiredTotal: number): void {
 
     // Try to spawn until we reach desiredTotal or run out of ship names.
     while (need > 0) {
-        // Randomize selection order each pass.
-        const order: Side[] = ran() < 0.5 ? ["FEDERATION", "EMPIRE"] : ["EMPIRE", "FEDERATION"];
+        // Prioritize the side with fewer bots (balance), then randomize if equal.
+        let targetSide: Side;
+        if (fed < emp) {
+            targetSide = "FEDERATION";
+        } else if (emp < fed) {
+            targetSide = "EMPIRE";
+        } else {
+            targetSide = ran() < 0.5 ? "FEDERATION" : "EMPIRE";
+        }
+
+        // Try target side first, then the other if target fails.
+        const order: Side[] = [targetSide, targetSide === "FEDERATION" ? "EMPIRE" : "FEDERATION"];
         let spawned = false;
 
         for (const side of order) {
