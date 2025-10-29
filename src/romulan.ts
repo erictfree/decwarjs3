@@ -98,7 +98,7 @@ export function maybeSpawnRomulan(): void {
     if (romcnt * 2 < numply) return;
 
     // spawn only when enough cycles have passed AND a random gate opens
-    if (romcnt >= numply * 3 && iran(5) === 5) {
+    if (romcnt >= numply * 3 && iran(5) === 0) {
         spawnRomulan();
         erom = iran(200) + 200; // 201..400
 
