@@ -33,7 +33,8 @@ import {
     emitShipHullChanged,
     emitShieldsChanged,
     emitTorpedoEvent,
-    emitRomulanDestroyed
+    emitRomulanDestroyed,
+    emitPlanetBaseRemoved
 } from './api/events.js';
 import type { TorpedoEventPayload, GridCoord } from './api/events.js';
 import { applyRomulanTorpedoHitFrom } from './romulan.js';
@@ -472,7 +473,40 @@ export function torpedoCommand(player: Player, command: Command, done?: () => vo
                 // victim gets a shorter "you were hit" note (your choice)
                 addPendingMessage(victim, `${atk.name} torpedo ${dmg} on you${res.critdm ? " (CRIT)" : ""}.`);
 
-                if (res.isDestroyed) checkEndGame();
+                if (res.isDestroyed) {
+                    // Award kill points like phasers
+                    if (player.ship) {
+                        const atkSide = player.ship.side;
+                        const tgtSide = victim.ship!.side;
+                        const sign = atkSide !== tgtSide ? 1 : -1;
+                        (pointsManager as any).addDamageToEnemies?.(5000 * sign, player, atkSide);
+                    }
+                    // Global destroy event + attacker/local radio messages
+                    emitShipDestroyed(
+                        victim.ship!.name,
+                        victim.ship!.side,
+                        { v: victim.ship!.position.v, h: victim.ship!.position.h },
+                        attackerRef(player),
+                        "combat"
+                    );
+                    if (player.ship) {
+                        sendMessageToClient(player, `You destroyed ${victim.ship!.name}!`);
+                        const origin = player.ship.position;
+                        for (const other of players) {
+                            if (!other.radioOn) continue;
+                            if (!other.ship) continue;
+                            if (other === player) continue;
+                            if (chebyshev(origin, other.ship.position) > 10) continue;
+                            addPendingMessage(other, `${player.ship.name} destroyed ${victim.ship!.name}.`);
+                        }
+                    }
+                    // Remove victim from the game and tally enemies destroyed
+                    removePlayerFromGame(victim);
+                    if (player.ship) {
+                        pointsManager.addEnemiesDestroyed(1, player, player.ship.side);
+                    }
+                    checkEndGame();
+                }
                 break;
             }
 
@@ -926,30 +960,18 @@ export function torpedoDamage(
             {
                 const base = target as Planet;
                 const prevSide = base.side; // capture before mutation
-                // Centralized removal (arrays + team memory)
-                removeBase(base);
-                // BASKIL parity: undock/RED ships that were using this port
+                // BASKIL parity: undock/RED ships that were using this port (FIRST)
                 handleUndockForAllShipsAfterPortDestruction(base);
-                // Emit single authoritative removal event
-                gameEvents.emit({
-                    type: "planet_base_removed",
-                    payload: {
-                        planet: {
-                            name: base.name,
-                            previousSide: prevSide,
-                            position: { ...base.position },
-                            // informational only; object is removed
-                            energy: 0,
-                            builds: 0,
-                        },
-                        by: (source instanceof Player && source.ship)
-                            ? { shipName: source.ship.name, side: source.ship.side }
-                            : undefined,
-                        reason: "collapse_torpedo",
-                    },
-                });
+                // Centralized authoritative removal (arrays + team memory)
+                removeBase(base);
+                // Emit canonical removal event
+                emitPlanetBaseRemoved(
+                    base,
+                    "collapse_torpedo",
+                    (source as Player),
+                    prevSide
+                );
             }
-
 
 
             return {
@@ -1133,23 +1155,19 @@ export function applyDamage(
 
         if (target.energy <= 0) {
             isDestroyed = true;
-            const prevSide = target.side; // capture before removal
-            // Centralized removal (arrays + team memory)
-            removeBase(target);
-            // undock ships that were using this port (BASKIL parity)
-            handleUndockForAllShipsAfterPortDestruction(target);
-            // emit with captured previous side
-            gameEvents.emit({
-                type: "planet_base_removed",
-                payload: {
-                    planet: {
-                        name: target.name,
-                        previousSide: prevSide,
-                        position: { ...target.position }
-                    },
-                    reason: "collapse_torpedo"
-                }
-            });
+            const base = target as Planet;
+            const prevSide = base.side; // capture before removal
+            // 1) Undock first (BASKIL parity)
+            handleUndockForAllShipsAfterPortDestruction(base);
+            // 2) Authoritative removal
+            removeBase(base);
+            // 3) Emit canonical base-removed event (same as phasers)
+            emitPlanetBaseRemoved(
+                base,
+                "collapse_torpedo",
+                (source as Player),
+                prevSide
+            );
         }
 
 

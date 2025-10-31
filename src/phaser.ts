@@ -6,16 +6,18 @@ import {
     STARBASE_PHASER_RANGE,
     MAX_SHIELD_ENERGY
 } from './settings.js';
-import { sendMessageToClient, addPendingMessage, sendOutputMessage } from './communication.js';
+import { sendMessageToClient, addPendingMessage, sendOutputMessage, sendMessageToOthers } from './communication.js';
 import { chebyshev, ocdefCoords, getCoordsFromCommandArgs } from './coords.js';
 import { Planet } from './planet.js';
 import { players, SHIP_FATAL_DAMAGE, planets, bases, removePlayerFromGame, checkEndGame, pointsManager, removeBase } from './game.js';
 import { handleUndockForAllShipsAfterPortDestruction } from './ship.js';
-import { PLANET_PHASER_RANGE } from './game.js';
 import { attackerRef, emitShipDestroyed } from './api/events.js';
 import { emitPhaserEvent, emitShieldsChanged, emitPlanetBaseRemoved } from './api/events.js';
 
 import type { Side } from "./settings.js";
+
+// Planets fire out to 2 sectors (Chebyshev)
+const PLANET_PHASER_RANGE = 2;
 
 type ScoringAPI = {
     addDamageToEnemies?(amount: number, source: Player, side: Side): void;
@@ -337,11 +339,10 @@ export function applyPhaserDamage(
 
                 const base = target as Planet;
                 const prevSide = base.side;
-                // Centralized removal keeps team memory in sync
-                removeBase(base);
-
-                // BASKIL parity: undock/RED ships that were using this port
+                // BASKIL parity: undock/RED ships that were using this port (do this FIRST)
                 handleUndockForAllShipsAfterPortDestruction(base);
+                // Single authoritative removal for bases (removes planet too)
+                removeBase(base);
 
                 emitPlanetBaseRemoved(base, "collapse_phaser", attacker, prevSide);
                 checkEndGame = true;
@@ -395,7 +396,10 @@ export function applyPhaserDamage(
             ((target as Player).ship!.energy <= 0 || (target as Player).ship!.damage >= SHIP_FATAL_DAMAGE)) ||
         (!targetIsShip && (target as Planet).isBase && (target as Planet).energy <= 0);
 
-    if (isDestroyed && !baseKilledNow) {
+    // Destruction handling:
+    //  - For ships: unchanged
+    //  - For bases: ALWAYS handle, even if an earlier step already set baseKilledNow
+    if (isDestroyed) {
         klflg = 1;
         if (targetIsShip) {
             // +/-5000 ship kill bonus
@@ -422,29 +426,44 @@ export function applyPhaserDamage(
                 );
             } catch { /* ignore */ }
 
+            // Tell attacker and nearby radios
+            if (attacker.ship) {
+                sendMessageToClient(attacker, `You destroyed ${(target as Player).ship!.name}!`);
+                const origin = attacker.ship.position;
+                for (const other of players) {
+                    if (!other.radioOn) continue;
+                    if (!other.ship) continue;
+                    if (other === attacker) continue;
+                    if (chebyshev(origin, other.ship.position) > 10) continue;
+                    addPendingMessage(other, `${attacker.ship.name} destroyed ${(target as Player).ship!.name}.`);
+                }
+            }
+
             removePlayerFromGame(target as Player);
             if (attacker.ship) {
                 pointsManager.addEnemiesDestroyed(1, attacker, attacker.ship.side);
             }
         } else {
-            // base died via hull after PHADAM
+            // Base destroyed by phasers
+            const base = target as Planet;
             if (attacker.ship) {
                 const atkSide = attacker.ship.side;
-                const tgtSide = (target as Planet).side;
+                const tgtSide = base.side;
                 const sign = atkSide !== tgtSide ? 1 : -1;
                 (pointsManager as unknown as ScoringAPI).addDamageToBases?.(10000 * sign, attacker, atkSide);
             }
-
-            {
-                const base = target as Planet;
-                const prevSide = base.side;
-                // Centralized removal keeps team memory in sync
+            const prevSide = base.side;
+            // Avoid double-removal if earlier logic already removed it
+            const list = prevSide === "FEDERATION" ? bases.federation : bases.empire;
+            const stillPresent = list.some(b => b === base || (b.position.v === base.position.v && b.position.h === base.position.h));
+            if (base.isBase && stillPresent) {
+                // Centralized removal keeps state/UI in sync
                 removeBase(base);
                 // BASKIL parity: undock/RED ships that were using this port
                 handleUndockForAllShipsAfterPortDestruction(base);
                 emitPlanetBaseRemoved(base, "collapse_phaser", attacker, prevSide);
-                checkEndGame = true;
             }
+            checkEndGame = true;
         }
     }
 
@@ -743,36 +762,41 @@ export function planetPhaserDefense(triggeringPlayer: Player, counts?: { numply:
 
     for (const planet of planets) {
         if (planet.isBase) continue; // bases handled elsewhere
-        // Need at least some builds to have guns (classic feel)
-        if ((planet.builds ?? 0) <= 0) continue;
+        // Classic DECWAR parity: planets with 0 builds STILL FIRE.
+        // Normalize builds to [0..], but do NOT gate on it.
+        planet.builds = Math.max(0, planet.builds ?? 0);
 
-        // Activation rules:
+        // Activation rules (structured so we can log per target when needed)
         const isNeutral = planet.side === "NEUTRAL";
         const isEnemy = planet.side !== "NEUTRAL" && planet.side !== moverSide;
 
-        if (!isRomulanMove) {
-            if (!isEnemy && !isNeutral) continue;          // own side's planets do NOT activate
-            if (isNeutral && ran() < 0.5) continue; // 50% chance to skip neutrals
-        } else {
-            // Romulan activates both sides; neutrals still 50%
-            if (isNeutral && ran() < 0.5) continue;
-        }
+        // Per-planet neutral coin flip (applies for the whole sweep)
+        let neutralCoin = 1;
+        if (isNeutral) neutralCoin = ran();
+        // Own-side planets never attack on non-Romulan moves
+        const ownSideBlocked = (!isRomulanMove && !isNeutral && !isEnemy);
+        if (ownSideBlocked) continue;
 
-        // DECWAR PLNATK: phit = (50 + 30*builds) / numply  (builds in 0..5)
-        const phit = (50 + 30 * (planet.builds ?? 0)) / Math.max(numply, 1);
+        // phit per DECWAR: floor((50 + 30*builds) / numply)
+        const phit = Math.floor((50 + 30 * planet.builds) / Math.max(numply, 1));
 
-        // scan for enemy, visible ships in range 2
+        // Scan for nearby ships within planetary defense range
         for (const p of players) {
             if (!p.ship) continue;
-            // if cloaked and not revealed, skip
-            if (p.ship.romulanStatus?.cloaked && !p.ship.romulanStatus?.isRevealed) continue;
-            // never shoot same-side ships
-            if (planet.side !== "NEUTRAL" && p.ship.side === planet.side) continue;
 
             const dist = chebyshev(planet.position, p.ship.position);
             if (dist > PLANET_PHASER_RANGE) continue;
 
-            // fire!
+            // Skip cloaked (unrevealed) Romulans
+            if (p.ship.romulanStatus?.cloaked && !p.ship.romulanStatus?.isRevealed) continue;
+
+            // Never attack same-side ships (except neutral coin chance)
+            if (planet.side !== "NEUTRAL" && p.ship.side === planet.side) continue;
+
+            // Neutral 50% chance skip
+            if (isNeutral && neutralCoin < 0.5) continue;
+
+            // Fire — DECWAR parity: pass raw phit, no scaling
             const { hita, killed } = applyInstallationPhaserToShip({
                 attackerPlanet: planet,
                 target: p,
@@ -780,34 +804,11 @@ export function planetPhaserDefense(triggeringPlayer: Player, counts?: { numply:
                 distance: dist
             });
 
-            if (hita <= 0) continue;
+            // Message for the target
+            const sectorText = dist === 1 ? "SECTOR" : "SECTORS";
+            addPendingMessage(p, `\r\nPhasers fired from planet ${planet.name}! (${dist} ${sectorText})`);
 
-            // Team scoring: credit owner side via existing API; skip neutral
-            if (planet.side !== "NEUTRAL") {
-                (pointsManager as any).addDamageToEnemies?.(hita, /*by*/ undefined, planet.side);
-                // Kill bonus exactly once per victim hull
-                if (killed && p.ship && !p.ship.__killCredited) {
-                    p.ship.__killCredited = true;
-                    (pointsManager as any).addEnemiesDestroyed?.(1, /*by*/ undefined, planet.side);
-                }
-            }
-
-            // Player messaging (pridis/makhit analogue)
-            const coords = ocdefCoords(p.settings.ocdef, p.ship.position, planet.position);
-            addPendingMessage(p,
-                `ALERT: Planet at ${coords} fires phasers! You take ${Math.round(hita)} damage.`);
-
-            // If the victim died, handle removal like elsewhere
             if (killed) {
-                if (p.ship) {
-                    emitShipDestroyed(
-                        p.ship.name,
-                        p.ship.side,
-                        { v: p.ship.position.v, h: p.ship.position.h },
-                        /* by */ undefined,
-                        "planet"
-                    );
-                }
                 removePlayerFromGame(p);
             }
         }

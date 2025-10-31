@@ -7,10 +7,13 @@ import { phadamCore } from './phaser.js';
 import { maybeApplyShipCriticalParity } from './phaser.js';
 import { applyDamage } from './torpedo.js';
 import { MAX_SHIELD_ENERGY } from './settings.js';
-import { addPendingMessage } from './communication.js';
+import { addPendingMessage, sendMessageToClient } from './communication.js';
 import { Ship } from './ship.js';
 import { getRandom } from './util/random.js'; // deterministic RNG used elsewhere
 import { emitShieldsChanged } from './api/events.js';
+import { sendMessageToOthers } from './communication.js';
+
+const BASE_PHASER_RANGE = 4; // bases fire out to 4 sectors (Chebyshev)
 
 type RomulanStatus = {
     isRomulan: boolean;
@@ -69,10 +72,9 @@ export function basphaFireOnce(mover: Player, numply: number): void {
 
         for (const ship of targets) {
             const s = ship.ship!;
-            if (s.romulanStatus?.cloaked) continue; // skip cloaked
-
             const distance = chebyshev(base.position, s.position);
-            if (distance > 4) continue; // Fortran: ldis(..., 4)
+            if (distance > BASE_PHASER_RANGE) continue;
+            if (s.romulanStatus?.cloaked) continue;
 
             // PHADAM (base -> ship): targetIsBase=false, shooterDamaged=false
             const shieldsBefore = s.shieldEnergy;
@@ -85,8 +87,8 @@ export function basphaFireOnce(mover: Player, numply: number): void {
                 rawShieldMax: MAX_SHIELD_ENERGY,
                 distance,
                 shooterDamaged: false,
-                // Feed core-scale phit (same divisor used by ship/planet phasers)
-                phit: basePhit / PHADAM_PHIT_DIVISOR,
+                // DECWAR parity: pass raw 200/numply; no extra scaling
+                phit: basePhit,
             });
 
             let hita = core.hita;
@@ -120,14 +122,22 @@ export function basphaFireOnce(mover: Player, numply: number): void {
             const wasAlive = s.energy > 0;
 
             // Apply hull/energy via shared resolver (so you keep one place for destruction rules)
-            const res = applyDamage(base, ship, hita, getRandom());
+            const damageRes = applyDamage(base, ship, hita, getRandom());
+
+            // DECWAR-style message for the target captain
+            const sectorText = distance === 1 ? "SECTOR" : "SECTORS";
+            addPendingMessage(
+                ship,
+                `Base ${base.name} fires phaser! (${distance} ${sectorText})`
+            );
 
             // === scoring parity (credit exactly this volley) ===
-            const dealt = Math.max(0, Math.round(res.hita));
+            const dealt = Math.max(0, Math.round(damageRes.hita));
+
             try {
                 // scoring: base category + kill-only-once
                 (pointsManager as any).addDamageToBases?.(dealt, /*by*/ undefined, base.side);
-                if (wasAlive && res.isDestroyed && ship.ship && !ship.ship.__killCredited) {
+                if (wasAlive && damageRes.isDestroyed && ship.ship && !ship.ship.__killCredited) {
                     ship.ship.__killCredited = true;
                     (pointsManager as any).addEnemiesDestroyed?.(1, /*by*/ undefined, base.side);
                 }

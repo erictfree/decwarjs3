@@ -1,6 +1,6 @@
 import { sendMessageToClient, sendMessageToOthersWithFormat } from "./communication.js";
 import { ran } from "./util/random.js";
-import { players, stars, pointsManager, removePlayerFromGame, planets, bases, checkEndGame, blackholes, SHIP_FATAL_DAMAGE } from "./game.js";
+import { players, stars, pointsManager, removePlayerFromGame, planets, bases, checkEndGame, blackholes, SHIP_FATAL_DAMAGE, removePlanetAt, removeBaseAt } from "./game.js";
 import { Player } from "./player.js";
 import { ocdefCoords, isAdjacent } from "./coords.js";
 import { disconnectTractorWithReason } from "./tractor.js";
@@ -304,7 +304,8 @@ function applyNovaDamagePlanet(player: Player, planet: Planet, v: number, h: num
             } else {
                 pointsManager.addDamageToBases(-10000, player, player.ship.side);
             }
-            basesArray.splice(baseIndex, 1);
+            // Centralized removal also clears team memory
+            removeBaseAt(side, v, h);
             checkEndGame();
         }
 
@@ -329,15 +330,9 @@ function applyNovaDamagePlanet(player: Player, planet: Planet, v: number, h: num
         if (planet.builds <= 0) {
             destroyed = true;
             pointsManager.addPlanetsDestroyed(1, player, player.ship.side);
-            const planetIndex = planets.findIndex(p => p.position.v === v && p.position.h === h);
-            if (planetIndex !== -1) {
-                planets.splice(planetIndex, 1);
-            }
-            const basesArray = planet.side === "FEDERATION" ? bases.federation : bases.empire;
-            const baseIndex = basesArray.findIndex(base => base.position.v === v && base.position.h === h);
-            if (baseIndex !== -1) {
-                basesArray.splice(baseIndex, 1);
-            }
+            // Remove via centralized helper to keep LIST memory in sync
+            removePlanetAt(v, h);
+            // Belt-and-suspenders: ensure flag is down, but do not mutate base arrays here
             planet.isBase = false;
             checkEndGame();
         }

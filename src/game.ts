@@ -126,9 +126,9 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
     tcmRunning = true;
     const attributed = !!opts?.attributed && !!actor?.ship;
     const ctx: Player | undefined = actor ?? players.find(pl => pl.ship);
-    if (process.env.DEBUG_TCM === "1") {
-        console.log("processTimeConsumingMove", attributed && actor?.ship ? actor.ship.name : "idle");
-    }
+
+    // console.log("processTimeConsumingMove", attributed && actor?.ship ? actor.ship.name : "idle");
+
 
     // Team turn bookkeeping (only when attributed)
     if (attributed && actor?.ship) {
@@ -148,11 +148,15 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
 
     // ACTIVE human players only (exclude Romulan), never 0; fatal threshold
     const isAliveHuman = (p: Player) =>
-        !!p?.ship && p.ship.side !== "ROMULAN" && p.ship.energy > 0 && p.ship.damage < SHIP_FATAL_DAMAGE;
+        !!p?.ship &&
+        p.ship.side !== "ROMULAN" &&
+        p.ship.energy > 0 &&
+        p.ship.damage < SHIP_FATAL_DAMAGE;
     const numply = Math.max(1, players.filter(isAliveHuman).length);
 
     // Once per full sweep of players
     if (settings.dotime >= numply) {
+        console.log("sweep starting", numply);
         settings.dotime = 0; // reset sweep
         // If there is no live ship context (e.g., empty server), skip ship-scoped routines.
         if (ctx?.ship) {
@@ -161,10 +165,11 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
             const moverSide = ctx.ship.side;
             const numsid = Math.max(1, alivePlayers.filter(p => p.ship!.side === moverSide).length);
             // === Defense & regen in DECWAR order ===
-            basphaFireOnce(ctx, numply);                 // BASPHA (enemy bases fire once)
-            planetPhaserDefense(ctx, { numply });        // PLNATK (planet auto-phasers)
+            basphaFireOnce(ctx, numply);                 // BASPHA (enemy bases)
+            planetPhaserDefense(ctx, { numply });        // PLNATK (planets)
             baseEnergyRegeneration(ctx, { numply, numsid }); // BASBLD (heal a little)
             // ======================================
+
 
             // Log current game state
             //console.log(`TCM: Planets=${planets.length}, Bases: FED=${bases.federation.length}, EMP=${bases.empire.length}`);
@@ -179,7 +184,7 @@ export function processTimeConsumingMove(actor?: Player | null, opts?: { attribu
 
         // General side-playing bots (testing only). Guard with env to avoid unintended CPU use.
         if (true || process.env.SPAWN_SIDE_BOTS === "1") {
-            ensureBots(6);      // keep exactly two bot ships alive
+            ensureBots(10);      // keep exactly two bot ships alive
             updateSideBots();   // drive them this sweep
         }
     } else {
@@ -277,28 +282,21 @@ function checkForInactivity() {
 //     return baseHit;
 // }
 
-export function performPlanetOrBaseAttacks(base: boolean = false): void {
-    for (const planet of planets) {
-        if (planet.isBase !== base) continue; // Bases if base=true, planets if base=false
-        if (planet.side === "NEUTRAL") {
-            if (!base && getRandom() < 0.5) continue;
-        }
-
-        for (const player of players) {
-            if (!player.ship) continue;
-            if (player.ship.side === planet.side) continue;
-            if (player.ship.romulanStatus.cloaked) continue;
-
-            const range = chebyshev(planet.position, player.ship.position);
-            const maxRange = base ? 4 : 2; // 4 sectors for bases, 2 for planets
-            if (range > maxRange) continue;
-            //const phit = base ? 200 : 100; // 200 energy for bases, 100 for planets
-
-
-            // DO_DAMANGE
-            // calcShipFromPlanetPhaserDamage(phit, planet, player);
-        }
-    }
+export function performPlanetOrBaseAttacks(base: boolean = false, mover?: Player): void {
+    // Keep this function alive as a backwards-compatible entry point,
+    // but delegate to the *real* implementations so it actually does damage.
+    const isAliveHuman = (p: Player) =>
+        !!p?.ship &&
+        p.ship.side !== "ROMULAN" &&
+        p.ship.energy > 0 &&
+        p.ship.damage < SHIP_FATAL_DAMAGE;
+    const numply = Math.max(1, players.filter(isAliveHuman).length);
+    const ctx = mover && isAliveHuman(mover)
+        ? mover
+        : players.find(isAliveHuman);
+    if (!ctx) { return; }
+    if (base) basphaFireOnce(ctx, numply);
+    else planetPhaserDefense(ctx, { numply });
 }
 
 function checkForDisconnectedPlayers() {
@@ -409,6 +407,11 @@ export function removeBaseAt(side: "FEDERATION" | "EMPIRE", v: number, h: number
     const idx = arr.findIndex(b => b.position.v === v && b.position.h === h);
     if (idx === -1) return false;
     arr.splice(idx, 1);
+    // Also remove the underlying planet entry, if present (authoritative helper)
+    const planet = planets.find(p => p.position.v === v && p.position.h === h);
+    if (planet) {
+        removePlanet(planet);
+    }
     // bases share the same known-planet cache (isBase=true), clear stale memory too
     removePlanetFromAllMemories(v, h);
     return true;
